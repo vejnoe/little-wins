@@ -1,0 +1,947 @@
+
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f7f6f2">
+<title>Little Wins — Points</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg:#f7f6f2;
+  --paper:#fff;
+  --ink:#111;
+  --muted:#888;
+  --line:#e9e8e3;
+  --yellow:#fbbf24;
+  --yellow-dark:#e6a900;
+  --green:#39865b;
+  --radius:18px;
+}
+* {box-sizing:border-box}
+body {
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:Inter,system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+button,input {font:inherit}
+button {cursor:pointer}
+.num {font-variant-numeric:tabular-nums}
+.heading {font-family:"Space Grotesk",sans-serif}
+.app {
+  width:100%;
+  max-width:680px;
+  min-height:100vh;
+  min-height:100dvh;
+  margin:auto;
+  background:var(--paper);
+  display:flex;
+  flex-direction:column;
+  position:relative;
+}
+header {
+  padding:calc(18px + env(safe-area-inset-top)) 24px 18px;
+  border-bottom:2px solid var(--line);
+  position:relative;
+}
+.topline,.total-row,.card-head,.footer-row {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+.eyebrow {
+  color:var(--muted);
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:1.2px;
+  text-transform:uppercase;
+}
+.total-row {margin-top:7px;gap:12px}
+.total-left {display:flex;align-items:center;gap:12px;min-width:0}
+.coin-anchor {width:43px;height:43px;flex-shrink:0}
+.coin-anchor svg {width:100%;height:100%}
+.total-number {
+  font:700 clamp(25px,6vw,34px) "Space Grotesk",sans-serif;
+  letter-spacing:-1px;
+  white-space:nowrap;
+}
+.coin-label {font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px}
+.icon-button {
+  width:43px;height:43px;border:0;border-radius:15px;
+  background:var(--ink);color:white;
+  display:grid;place-items:center;
+  transition:transform .15s,background .15s;
+}
+.icon-button:active {transform:scale(.94)}
+.icon-button svg {width:22px;height:22px}
+main {flex:1;padding:20px 24px 28px}
+.tabs {
+  display:flex;gap:5px;padding:4px;
+  background:#f3f2ee;border-radius:13px;margin-bottom:22px;
+}
+.tab {
+  flex:1;border:0;background:transparent;border-radius:10px;
+  padding:10px;font-size:12px;font-weight:700;color:#888;
+}
+.tab.active {background:white;color:var(--ink);box-shadow:0 1px 4px #0000000c}
+.section-heading {
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:15px;
+}
+.section-heading h2 {font:700 20px "Space Grotesk",sans-serif;margin:0}
+.muted {color:var(--muted)}
+.task-list {display:flex;flex-direction:column;gap:13px}
+.task {
+  border:2px solid var(--ink);border-radius:var(--radius);
+  padding:17px;background:white;
+  box-shadow:3px 3px 0 var(--ink);
+  transition:background .2s,border-color .2s,box-shadow .2s;
+}
+.task.completed {
+  background:#fafaf8;border-color:#deded9;box-shadow:none;
+}
+.card-head {gap:10px;margin-bottom:15px}
+.task-title {
+  font:700 14px "Space Grotesk",sans-serif;
+  text-transform:uppercase;letter-spacing:.3px;
+  overflow-wrap:anywhere;
+}
+.completed .task-title {color:#999;text-decoration:line-through}
+.task-right {display:flex;align-items:center;gap:11px}
+.task-value {font-weight:700;font-size:14px;white-space:nowrap}
+.completed .task-value {color:#999}
+.done-button {
+  width:30px;height:30px;border:2px solid var(--ink);
+  border-radius:50%;background:white;color:transparent;
+  display:grid;place-items:center;flex-shrink:0;
+  transition:all .2s;
+}
+.done-button svg {width:16px;height:16px}
+.done-button:disabled {cursor:default}
+.completed .done-button {background:var(--ink);color:white}
+.slider-area {position:relative;padding-top:2px}
+.slider {
+  height:25px;display:flex;align-items:center;
+  position:relative;cursor:pointer;touch-action:none;
+  outline:none;
+}
+.track {
+  width:100%;height:4px;border-radius:20px;
+  background:#e4e4e0;overflow:hidden;
+  transition:height .15s;
+}
+.slider:active .track,.slider.dragging .track {height:9px}
+.fill {
+  height:100%;width:40%;background:var(--yellow);
+  border-radius:20px;
+}
+.thumb {
+  position:absolute;left:40%;top:50%;
+  width:19px;height:19px;border-radius:50%;
+  background:var(--yellow);border:3px solid var(--ink);
+  transform:translate(-50%,-50%) scale(0);
+  transition:transform .15s;
+  pointer-events:none;
+}
+.slider:active .thumb,.slider.dragging .thumb {transform:translate(-50%,-50%) scale(1)}
+.slider:focus-visible .thumb {transform:translate(-50%,-50%) scale(1)}
+.slider.locked {cursor:default;opacity:.8;touch-action:auto}
+.slider.locked .thumb {transform:translate(-50%,-50%) scale(0)}
+.tooltip {
+  position:absolute;bottom:29px;left:40%;
+  transform:translateX(-50%) translateY(4px);
+  background:var(--ink);color:white;padding:6px 9px;
+  border-radius:8px;font:700 11px "Space Grotesk",sans-serif;
+  opacity:0;pointer-events:none;white-space:nowrap;
+}
+.slider.dragging .tooltip {opacity:1;transform:translateX(-50%)}
+.task-meta {
+  display:flex;justify-content:space-between;
+  margin-top:7px;font-size:10px;color:#999;
+}
+.task-actions {display:flex;justify-content:flex-end;margin-top:8px}
+.delete-button {
+  border:0;background:transparent;color:#aaa;
+  font-size:11px;padding:4px 0;
+}
+.delete-button:hover {color:#b33}
+.empty {
+  padding:55px 15px;text-align:center;
+  border:1px dashed #ddd;border-radius:var(--radius);
+}
+.empty strong {font:700 17px "Space Grotesk",sans-serif}
+.empty p {font-size:12px;color:#888;line-height:1.6}
+footer {
+  border-top:2px solid var(--line);
+  padding:14px 24px calc(14px + env(safe-area-inset-bottom));
+  background:#fafaf8;
+}
+.footer-row {font-size:11px;color:#888}
+.sound-button {
+  border:1px solid #ddd;background:white;border-radius:9px;
+  padding:8px 11px;font-size:11px;font-weight:600;color:#555;
+}
+
+/* History */
+.week-nav {display:flex;align-items:center;gap:12px}
+.nav-button {
+  border:1px solid var(--line);background:white;
+  width:32px;height:32px;border-radius:10px;
+  display:grid;place-items:center;font-size:18px;
+}
+.nav-button:disabled {opacity:.25;cursor:default}
+.week-title {font:700 15px "Space Grotesk",sans-serif;min-width:100px;text-align:center}
+.week-list {display:flex;flex-direction:column;gap:13px}
+.week-card {
+  border:1.5px solid #e5e5e1;border-radius:16px;
+  padding:16px;background:white;
+}
+.week-card.selected {border:2px solid var(--ink)}
+.week-head {display:flex;justify-content:space-between;align-items:center}
+.week-id {font:700 19px "Space Grotesk",sans-serif}
+.week-total {font:700 16px "Space Grotesk",sans-serif}
+.chart {width:100%;height:82px;display:block;margin-top:13px;overflow:visible}
+.chart-line {
+  fill:none;stroke:var(--ink);stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round;
+}
+.chart-dot {fill:white;stroke:var(--ink);stroke-width:1.7}
+.chart-labels {display:grid;grid-template-columns:repeat(7,1fr);margin-top:2px}
+.chart-labels span {text-align:center;font-size:9px;color:#888}
+.week-empty {padding:20px 0;text-align:center;color:#aaa;font-size:12px}
+.history-note {font-size:11px;color:#999;line-height:1.5;margin:18px 2px}
+
+/* Modal */
+.overlay {
+  position:fixed;inset:0;background:#0006;z-index:20;
+  display:flex;align-items:flex-end;justify-content:center;
+  padding:0;opacity:1;transition:opacity .2s;
+}
+.overlay.hidden {display:none}
+.modal {
+  background:white;width:100%;max-width:680px;
+  border-radius:24px 24px 0 0;padding:24px;
+  padding-bottom:calc(24px + env(safe-area-inset-bottom));
+  transform:translateY(0);transition:transform .2s;
+}
+.overlay.hidden .modal {transform:translateY(100%)}
+.modal-head {display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}
+.modal h2 {font:700 20px "Space Grotesk",sans-serif;margin:0}
+.close-button {border:0;background:transparent;font-size:25px;color:#888}
+.field {margin-bottom:17px}
+.field label {display:block;font-size:11px;font-weight:700;color:#777;text-transform:uppercase;margin-bottom:7px}
+.field input {
+  width:100%;padding:13px 14px;border:2px solid #e5e5e5;
+  border-radius:12px;outline:none;font-size:15px;
+}
+.field input:focus {border-color:var(--ink)}
+.hint {font-size:10px;color:#999;margin-top:6px}
+.save-button {
+  width:100%;border:2px solid var(--ink);border-radius:12px;
+  background:var(--yellow);padding:14px;font-weight:700;
+  box-shadow:2px 2px 0 var(--ink);
+}
+.save-button:active {transform:translate(2px,2px);box-shadow:none}
+.error {font-size:11px;color:#b33;min-height:16px}
+
+/* Coins */
+.coin-particle {
+  position:fixed;z-index:50;width:20px;height:20px;
+  pointer-events:none;
+}
+.coin-particle svg {width:100%;height:100%}
+@keyframes coin-arrive {
+  0% {opacity:1;transform:translate(0,0) scale(.7) rotate(0)}
+  65% {opacity:1;transform:translate(var(--dx),var(--dy)) scale(1.15) rotate(300deg)}
+  100% {opacity:0;transform:translate(var(--dx),var(--dy)) scale(.3) rotate(540deg)}
+}
+.coin-bounce {animation:bounce .4s ease}
+@keyframes bounce {50%{transform:scale(1.18) rotate(-8deg)}}
+@media(min-width:700px) {
+  body {padding:35px 15px}
+  .app {min-height:calc(100vh - 70px);border-radius:24px;overflow:hidden;box-shadow:0 15px 50px #0000000c}
+  .overlay {align-items:center;padding:20px}
+  .modal {border-radius:24px;padding:28px}
+}
+@media(max-width:380px) {
+  header,main {padding-left:17px;padding-right:17px}
+  .task {padding:14px}
+  .task-title {font-size:12px}
+  .task-value {font-size:12px}
+}
+@media(prefers-reduced-motion:reduce) {
+  *,*::before,*::after {animation-duration:.01ms!important;transition-duration:.01ms!important}
+}
+</style>
+</head>
+
+<body>
+<div class="app">
+
+<header>
+  <div class="topline">
+    <span class="eyebrow" id="header-label">Dagens point</span>
+    <span class="eyebrow" id="today-label"></span>
+  </div>
+  <div class="total-row">
+    <div class="total-left">
+      <div class="coin-anchor" id="coin-anchor">
+        <svg viewBox="0 0 36 36" fill="none">
+          <circle cx="18" cy="18" r="16" fill="#FBBF24" stroke="#111" stroke-width="2.5"/>
+          <ellipse cx="18" cy="18" rx="10" ry="12" fill="#F59E0B" stroke="#111" stroke-width="1.5"/>
+          <rect x="15.5" y="10" width="5" height="16" rx="2.5" fill="#FEF08A"/>
+          <rect x="17" y="11" width="2" height="14" rx="1" fill="white"/>
+        </svg>
+      </div>
+      <div>
+        <div class="total-number num" id="total-points">0</div>
+        <div class="coin-label">POINTS</div>
+      </div>
+    </div>
+    <button class="icon-button" id="add-button" aria-label="Opret opgave">
+      <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" d="M12 4v16M4 12h16"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<main>
+  <div class="tabs">
+    <button class="tab active" data-view="today">I DAG</button>
+    <button class="tab" data-view="history">HISTORIK</button>
+  </div>
+
+  <section id="today-view">
+    <div class="section-heading">
+      <h2 class="heading">Dine opgaver</h2>
+      <span class="eyebrow" id="task-count"></span>
+    </div>
+    <div class="task-list" id="task-list"></div>
+  </section>
+
+  <section id="history-view" hidden>
+    <div class="section-heading">
+      <h2 class="heading">Uge-overblik</h2>
+      <div class="week-nav">
+        <button class="nav-button" id="week-prev" aria-label="Forrige uge">‹</button>
+        <span class="week-title" id="week-current"></span>
+        <button class="nav-button" id="week-next" aria-label="Næste uge">›</button>
+      </div>
+    </div>
+    <div class="week-list" id="week-list"></div>
+    <p class="history-note">Hver dag tæller sine egne optjente point. Uger uden aktivitet vises også, så du kan følge historikken uden at skulle nå et bestemt mål.</p>
+  </section>
+</main>
+
+<footer>
+  <div class="footer-row">
+    <span id="footer-date"></span>
+    <button class="sound-button" id="sound-button">♫ Lyd til</button>
+  </div>
+</footer>
+
+</div>
+
+<div class="overlay hidden" id="overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Opret ny opgave</h2>
+      <button class="close-button" id="close-modal" aria-label="Luk">×</button>
+    </div>
+    <form id="task-form">
+      <div class="field">
+        <label for="task-name">Opgavens navn</label>
+        <input id="task-name" maxlength="60" placeholder="F.eks. Gåtur, Ryd op..." required>
+      </div>
+      <div class="field">
+        <label for="task-max">Maksimale point</label>
+        <input id="task-max" type="number" min="1000" step="1" placeholder="F.eks. 15000" required>
+        <div class="hint">Minimum 1.000 point. Slideren starter ved 40 % af maksimum.</div>
+      </div>
+      <div class="error" id="form-error"></div>
+      <button class="save-button" type="submit">Gem opgave</button>
+    </form>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+const STORAGE_KEY = "little_wins_v1";
+const DAY_NAMES = ["Man","Tir","Ons","Tor","Fre","Lør","Søn"];
+const $ = id => document.getElementById(id);
+
+const coinSVG = size => `
+<svg width="${size}" height="${size}" viewBox="0 0 36 36" fill="none">
+<circle cx="18" cy="18" r="16" fill="#FBBF24" stroke="#111" stroke-width="2.5"/>
+<ellipse cx="18" cy="18" rx="10" ry="12" fill="#F59E0B" stroke="#111" stroke-width="1.5"/>
+<rect x="15.5" y="10" width="5" height="16" rx="2.5" fill="#FEF08A"/>
+</svg>`;
+
+const format = n => Math.round(n).toLocaleString("da-DK");
+
+function localDate(date = new Date()) {
+  return date.getFullYear() + "-" +
+    String(date.getMonth()+1).padStart(2,"0") + "-" +
+    String(date.getDate()).padStart(2,"0");
+}
+function dateFromKey(key) {
+  const [y,m,d] = key.split("-").map(Number);
+  return new Date(y,m-1,d,12);
+}
+function addDays(date,n) {
+  const d = new Date(date);
+  d.setDate(d.getDate()+n);
+  return d;
+}
+function isoWeek(date) {
+  const d = new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate()));
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate()+4-day);
+  const year = d.getUTCFullYear();
+  const start = new Date(Date.UTC(year,0,1));
+  const week = Math.ceil((((d-start)/86400000)+1)/7);
+  return {year,week};
+}
+function weekKey(date) {
+  const w = isoWeek(date);
+  return `${w.year}-W${String(w.week).padStart(2,"0")}`;
+}
+function mondayOfWeek(date) {
+  const d = new Date(date.getFullYear(),date.getMonth(),date.getDate(),12);
+  const day = (d.getDay()+6)%7;
+  d.setDate(d.getDate()-day);
+  return d;
+}
+function weekLabel(date) {
+  const w = isoWeek(date);
+  return `Uge ${w.week} · ${w.year}`;
+}
+function minPoints(task) {
+  return Math.round(task.max * 0.4);
+}
+function clamp(value,min,max) {
+  return Math.max(min,Math.min(max,value));
+}
+
+function load() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (saved && Array.isArray(saved.tasks) && saved.days) return saved;
+  } catch(e) {}
+  return {tasks:[],days:{},sound:true,lastDate:null};
+}
+
+let state = load();
+let currentDate = localDate();
+let selectedWeek = weekKey(new Date());
+let soundContext = null;
+
+function save() {
+  state.lastDate = localDate();
+  localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
+}
+
+function ensureToday() {
+  const today = localDate();
+  if (today !== currentDate) currentDate = today;
+
+  if (!state.days[today]) state.days[today] = {};
+
+  state.tasks.forEach(task => {
+    if (!state.days[today][task.id]) {
+      state.days[today][task.id] = {
+        value:minPoints(task),
+        done:false
+      };
+    }
+  });
+  save();
+}
+
+function entry(task,date=currentDate) {
+  if (!state.days[date]) state.days[date] = {};
+  if (!state.days[date][task.id]) {
+    state.days[date][task.id] = {
+      value:minPoints(task),
+      done:false
+    };
+  }
+  return state.days[date][task.id];
+}
+
+function dayTotal(date=currentDate) {
+  const records = state.days[date] || {};
+  return Object.values(records).reduce((sum,r) =>
+    sum + (r.done ? r.value : 0),0);
+}
+
+function allTimeTotal() {
+  return Object.values(state.days).reduce((sum,day) =>
+    sum + Object.values(day).reduce((s,r)=>s+(r.done?r.value:0),0),0);
+}
+
+function playTone(frequency=900,duration=.12) {
+  if (!state.sound) return;
+  try {
+    soundContext ||= new (window.AudioContext || window.webkitAudioContext)();
+    if (soundContext.state==="suspended") soundContext.resume();
+    const osc=soundContext.createOscillator();
+    const gain=soundContext.createGain();
+    osc.type="sine";
+    osc.frequency.setValueAtTime(frequency,soundContext.currentTime);
+    gain.gain.setValueAtTime(.08,soundContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.001,soundContext.currentTime+duration);
+    osc.connect(gain);
+    gain.connect(soundContext.destination);
+    osc.start();
+    osc.stop(soundContext.currentTime+duration);
+  } catch(e) {}
+}
+
+function animateCoins(source) {
+  const anchor=$("coin-anchor");
+  const from=source.getBoundingClientRect();
+  const to=anchor.getBoundingClientRect();
+  const startX=from.left+from.width/2;
+  const startY=from.top+from.height/2;
+  const endX=to.left+to.width/2;
+  const endY=to.top+to.height/2;
+
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    anchor.classList.add("coin-bounce");
+    setTimeout(()=>anchor.classList.remove("coin-bounce"),450);
+    return;
+  }
+
+  for(let i=0;i<12;i++) {
+    const coin=document.createElement("div");
+    coin.className="coin-particle";
+    coin.innerHTML=coinSVG(20);
+    coin.style.left=(startX-10+(Math.random()-.5)*30)+"px";
+    coin.style.top=(startY-10+(Math.random()-.5)*20)+"px";
+    const dx=endX-startX+(Math.random()-.5)*45;
+    const dy=endY-startY+(Math.random()-.5)*35;
+    coin.style.setProperty("--dx",dx+"px");
+    coin.style.setProperty("--dy",dy+"px");
+    coin.style.animation=`coin-arrive ${.55+Math.random()*.35}s cubic-bezier(.2,.8,.3,1) ${i*.035}s forwards`;
+    document.body.appendChild(coin);
+    setTimeout(()=>coin.remove(),1300);
+  }
+
+  setTimeout(()=>{
+    anchor.classList.add("coin-bounce");
+    setTimeout(()=>anchor.classList.remove("coin-bounce"),450);
+    playTone(1318,.2);
+  },850);
+}
+
+function renderHeader() {
+  $("total-points").textContent=format(dayTotal());
+  $("today-label").textContent=new Intl.DateTimeFormat("da-DK",{
+    weekday:"long",day:"numeric",month:"short"
+  }).format(new Date());
+  $("footer-date").textContent=new Intl.DateTimeFormat("da-DK",{
+    weekday:"long",day:"numeric",month:"long"
+  }).format(new Date());
+}
+
+function renderTasks() {
+  ensureToday();
+  renderHeader();
+
+  const list=$("task-list");
+  list.replaceChildren();
+  $("task-count").textContent=state.tasks.length+" OPGAVER";
+
+  if(!state.tasks.length) {
+    const empty=document.createElement("div");
+    empty.className="empty";
+    const title=document.createElement("strong");
+    title.textContent="Start med en lille sejr";
+    const text=document.createElement("p");
+    text.textContent="Opret din første opgave og giv den en pointværdi.";
+    empty.append(title,text);
+    list.append(empty);
+    return;
+  }
+
+  state.tasks.forEach(task=>{
+    const record=entry(task);
+    const percent=clamp(
+      ((record.value-minPoints(task))/(task.max-minPoints(task)))*100,0,100
+    );
+
+    const card=document.createElement("article");
+    card.className="task"+(record.done?" completed":"");
+
+    const head=document.createElement("div");
+    head.className="card-head";
+
+    const title=document.createElement("div");
+    title.className="task-title";
+    title.textContent=task.title;
+
+    const right=document.createElement("div");
+    right.className="task-right";
+
+    const value=document.createElement("span");
+    value.className="task-value num";
+    value.textContent=format(record.value);
+
+    const done=document.createElement("button");
+    done.className="done-button";
+    done.type="button";
+    done.setAttribute("aria-label",record.done?"Fortryd gennemførelse":"Markér som gennemført");
+    done.innerHTML='<svg fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.5 5 5L19.5 6"/></svg>';
+    done.addEventListener("click",()=>{
+      if(record.done) {
+        if(!confirm("Vil du fortryde gennemførelsen? Dagens point trækkes tilbage.")) return;
+        record.done=false;
+        save();
+        renderTasks();
+      } else {
+        record.done=true;
+        save();
+        animateCoins(done);
+        renderTasks();
+      }
+    });
+
+    right.append(value,done);
+    head.append(title,right);
+
+    const area=document.createElement("div");
+    area.className="slider-area";
+
+    const slider=document.createElement("div");
+    slider.className="slider"+(record.done?" locked":"");
+    slider.setAttribute("role","slider");
+    slider.setAttribute("tabindex",record.done?"-1":"0");
+    slider.setAttribute("aria-label","Potentielle point for "+task.title);
+    slider.setAttribute("aria-valuemin",minPoints(task));
+    slider.setAttribute("aria-valuemax",task.max);
+    slider.setAttribute("aria-valuenow",record.value);
+
+    const track=document.createElement("div");
+    track.className="track";
+    const fill=document.createElement("div");
+    fill.className="fill";
+    fill.style.width=percent+"%";
+    track.append(fill);
+
+    const thumb=document.createElement("div");
+    thumb.className="thumb";
+    thumb.style.left=percent+"%";
+
+    const tooltip=document.createElement("div");
+    tooltip.className="tooltip num";
+    tooltip.textContent=format(record.value);
+    tooltip.style.left=percent+"%";
+
+    slider.append(track,thumb,tooltip);
+    area.append(slider);
+
+    const meta=document.createElement("div");
+    meta.className="task-meta";
+    const min=document.createElement("span");
+    min.textContent="MIN. "+format(minPoints(task));
+    const max=document.createElement("span");
+    max.textContent="MAX. "+format(task.max);
+    meta.append(min,max);
+
+    const actions=document.createElement("div");
+    actions.className="task-actions";
+    const del=document.createElement("button");
+    del.className="delete-button";
+    del.textContent="Slet opgave";
+    del.addEventListener("click",()=>{
+      if(!confirm(`Slet "${task.title}"? Opgaven kommer ikke med på fremtidige dage.`)) return;
+      state.tasks=state.tasks.filter(t=>t.id!==task.id);
+      // Historical daily records are deliberately preserved.
+      save();
+      renderTasks();
+    });
+    actions.append(del);
+
+    card.append(head,area,meta,actions);
+    list.append(card);
+
+    if(!record.done) attachSlider(slider,task,record,fill,thumb,tooltip,value);
+  });
+}
+
+function attachSlider(slider,task,record,fill,thumb,tooltip,valueEl) {
+  let dragging=false;
+  let lastTick=record.value;
+
+  function update(clientX) {
+    const rect=slider.getBoundingClientRect();
+    const ratio=clamp((clientX-rect.left)/rect.width,0,1);
+    const next=Math.round(minPoints(task)+(task.max-minPoints(task))*ratio);
+    const percent=ratio*100;
+
+    record.value=next;
+    fill.style.width=percent+"%";
+    thumb.style.left=percent+"%";
+    tooltip.style.left=percent+"%";
+    tooltip.textContent=format(next);
+    valueEl.textContent=format(next);
+    slider.setAttribute("aria-valuenow",next);
+
+    if(Math.abs(next-lastTick)>=Math.max(1,task.max/30)) {
+      playTone(480,.025);
+      lastTick=next;
+    }
+    renderHeader();
+  }
+
+  slider.addEventListener("pointerdown",e=>{
+    if(record.done) return;
+    dragging=true;
+    slider.classList.add("dragging");
+    slider.setPointerCapture(e.pointerId);
+    update(e.clientX);
+  });
+
+  slider.addEventListener("pointermove",e=>{
+    if(dragging) update(e.clientX);
+  });
+
+  function endDrag() {
+    if(!dragging) return;
+    dragging=false;
+    slider.classList.remove("dragging");
+    save();
+  }
+  slider.addEventListener("pointerup",endDrag);
+  slider.addEventListener("pointercancel",endDrag);
+  slider.addEventListener("lostpointercapture",endDrag);
+
+  slider.addEventListener("keydown",e=>{
+    let next=record.value;
+    const step=Math.max(1,Math.round((task.max-minPoints(task))/100));
+    if(e.key==="ArrowRight"||e.key==="ArrowUp") next+=step;
+    else if(e.key==="ArrowLeft"||e.key==="ArrowDown") next-=step;
+    else if(e.key==="Home") next=minPoints(task);
+    else if(e.key==="End") next=task.max;
+    else return;
+    e.preventDefault();
+    const rect=slider.getBoundingClientRect();
+    const ratio=(clamp(next,minPoints(task),task.max)-minPoints(task))/(task.max-minPoints(task));
+    update(rect.left+ratio*rect.width);
+    save();
+  });
+}
+
+/* Weekly history */
+function weekScores(date) {
+  const monday=mondayOfWeek(date);
+  const scores=[];
+  for(let i=0;i<7;i++) {
+    const key=localDate(addDays(monday,i));
+    scores.push({
+      date:key,
+      label:DAY_NAMES[i],
+      score:dayTotal(key)
+    });
+  }
+  return scores;
+}
+
+function makeSparkline(scores) {
+  const width=560,height=82,pad=7;
+  const max=Math.max(1,...scores.map(s=>s.score));
+  const points=scores.map((s,i)=>({
+    x:pad+i*((width-pad*2)/6),
+    y:height-pad-(s.score/max)*(height-pad*2)
+  }));
+
+  let path="";
+  points.forEach((p,i)=>{
+    if(i===0) path+=`M ${p.x} ${p.y} `;
+    else {
+      const prev=points[i-1];
+      const mid=(prev.x+p.x)/2;
+      path+=`C ${mid} ${prev.y}, ${mid} ${p.y}, ${p.x} ${p.y} `;
+    }
+  });
+
+  const dots=points.map(p=>
+    `<circle class="chart-dot" cx="${p.x}" cy="${p.y}" r="4"/>`
+  ).join("");
+
+  return `<svg class="chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Daglige point: ${scores.map(s=>s.label+" "+format(s.score)).join(", ")}">
+    <path class="chart-line" d="${path}"/>${dots}
+  </svg>`;
+}
+
+function renderHistory() {
+  const list=$("week-list");
+  list.replaceChildren();
+
+  const selectedDate=weekStartFromKey(selectedWeek);
+  $("week-current").textContent=weekLabel(selectedDate);
+
+  const currentKey=weekKey(new Date());
+  $("week-next").disabled=selectedWeek>=currentKey;
+
+  // Show the selected week and the 7 preceding weeks.
+  for(let offset=0;offset<8;offset++) {
+    const date=addDays(selectedDate,-offset*7);
+    const scores=weekScores(date);
+    const total=scores.reduce((sum,s)=>sum+s.score,0);
+
+    const card=document.createElement("article");
+    card.className="week-card"+(offset===0?" selected":"");
+
+    const head=document.createElement("div");
+    head.className="week-head";
+    const id=document.createElement("div");
+    id.className="week-id";
+    id.textContent="W"+String(isoWeek(date).week).padStart(2,"0");
+    const sum=document.createElement("div");
+    sum.className="week-total num";
+    sum.textContent=format(total);
+    head.append(id,sum);
+
+    card.append(head);
+    card.insertAdjacentHTML("beforeend",makeSparkline(scores));
+
+    const labels=document.createElement("div");
+    labels.className="chart-labels";
+    DAY_NAMES.forEach((name,i)=>{
+      const span=document.createElement("span");
+      span.textContent=name;
+      span.title=format(scores[i].score)+" point";
+      labels.append(span);
+    });
+    card.append(labels);
+
+    if(total===0) {
+      const note=document.createElement("div");
+      note.className="week-empty";
+      note.textContent="Ingen optjente point denne uge";
+      card.append(note);
+    }
+    list.append(card);
+  }
+}
+
+function weekStartFromKey(key) {
+  const match=key.match(/^(\d{4})-W(\d{2})$/);
+  const year=Number(match[1]),week=Number(match[2]);
+  const jan4=new Date(year,0,4,12);
+  const monday=mondayOfWeek(jan4);
+  return addDays(monday,(week-1)*7);
+}
+
+function changeWeek(amount) {
+  const next=addDays(weekStartFromKey(selectedWeek),amount*7);
+  selectedWeek=weekKey(next);
+  renderHistory();
+}
+
+/* Navigation */
+function showView(view) {
+  $("today-view").hidden=view!=="today";
+  $("history-view").hidden=view!=="history";
+  document.querySelectorAll(".tab").forEach(tab=>{
+    tab.classList.toggle("active",tab.dataset.view===view);
+  });
+  $("add-button").hidden=view!=="today";
+  $("header-label").textContent=view==="today"?"Dagens point":"Dagens point";
+  if(view==="history") {
+    selectedWeek=weekKey(new Date());
+    renderHistory();
+  }
+}
+
+document.querySelectorAll(".tab").forEach(tab=>{
+  tab.addEventListener("click",()=>showView(tab.dataset.view));
+});
+$("week-prev").addEventListener("click",()=>changeWeek(-1));
+$("week-next").addEventListener("click",()=>changeWeek(1));
+
+/* Task creation */
+function openModal() {
+  $("overlay").classList.remove("hidden");
+  $("task-name").focus();
+}
+function closeModal() {
+  $("overlay").classList.add("hidden");
+  $("task-form").reset();
+  $("form-error").textContent="";
+}
+$("add-button").addEventListener("click",openModal);
+$("close-modal").addEventListener("click",closeModal);
+$("overlay").addEventListener("click",e=>{
+  if(e.target===$("overlay")) closeModal();
+});
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape") closeModal();
+});
+
+$("task-form").addEventListener("submit",e=>{
+  e.preventDefault();
+  const title=$("task-name").value.trim();
+  const max=Number($("task-max").value);
+
+  if(!title) {
+    $("form-error").textContent="Skriv et navn til opgaven.";
+    return;
+  }
+  if(!Number.isSafeInteger(max)||max<1000) {
+    $("form-error").textContent="Maksimale point skal være mindst 1.000.";
+    return;
+  }
+
+  const task={id:crypto.randomUUID(),title,max};
+  state.tasks.push(task);
+  ensureToday();
+  entry(task);
+  save();
+  closeModal();
+  renderTasks();
+});
+
+/* Sound */
+$("sound-button").addEventListener("click",()=>{
+  state.sound=!state.sound;
+  $("sound-button").textContent=state.sound?"♫ Lyd til":"♫ Lyd fra";
+  save();
+});
+
+/* Day rollover */
+function checkDate() {
+  const today=localDate();
+  if(today!==currentDate) {
+    currentDate=today;
+    ensureToday();
+    renderTasks();
+    if(!$("history-view").hidden) renderHistory();
+  }
+}
+
+document.addEventListener("visibilitychange",()=>{
+  if(!document.hidden) checkDate();
+});
+window.addEventListener("focus",checkDate);
+setInterval(checkDate,60000);
+
+/* Initialisation */
+ensureToday();
+$("sound-button").textContent=state.sound?"♫ Lyd til":"♫ Lyd fra";
+renderTasks();
+})();
+</script>
+</body>
+</html>
