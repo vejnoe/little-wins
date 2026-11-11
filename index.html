@@ -3,8 +3,16 @@
 <html lang="da">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#f7f6f2">
+
+<!-- PWA / iOS Web App Tags -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Little Wins">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+
 <title>Little Wins — Points</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -138,11 +146,11 @@ main {flex:1;padding:20px 24px 28px}
 }
 .slider:active .track,.slider.dragging .track {height:9px}
 .fill {
-  height:100%;width:40%;background:var(--yellow);
+  height:100%;width:0%;background:var(--yellow);
   border-radius:20px;
 }
 .thumb {
-  position:absolute;left:40%;top:50%;
+  position:absolute;left:0%;top:50%;
   width:19px;height:19px;border-radius:50%;
   background:var(--yellow);border:3px solid var(--ink);
   transform:translate(-50%,-50%) scale(0);
@@ -154,7 +162,7 @@ main {flex:1;padding:20px 24px 28px}
 .slider.locked {cursor:default;opacity:.8;touch-action:auto}
 .slider.locked .thumb {transform:translate(-50%,-50%) scale(0)}
 .tooltip {
-  position:absolute;bottom:29px;left:40%;
+  position:absolute;bottom:29px;left:0%;
   transform:translateX(-50%) translateY(4px);
   background:var(--ink);color:white;padding:6px 9px;
   border-radius:8px;font:700 11px "Space Grotesk",sans-serif;
@@ -426,7 +434,7 @@ function weekLabel(date) {
   return `Uge ${w.week} · ${w.year}`;
 }
 function minPoints(task) {
-  return Math.round(task.max * 0.4);
+  return 0;
 }
 function clamp(value,min,max) {
   return Math.max(min,Math.min(max,value));
@@ -566,9 +574,9 @@ function renderTasks() {
     const empty=document.createElement("div");
     empty.className="empty";
     const title=document.createElement("strong");
-    title.textContent="Start med en lille sejr";
+    title.textContent="Ingen opgaver endnu";
     const text=document.createElement("p");
-    text.textContent="Opret din første opgave og giv den en pointværdi.";
+    text.textContent="Tryk på + knappen øverst for at oprette din første opgave.";
     empty.append(title,text);
     list.append(empty);
     return;
@@ -604,16 +612,14 @@ function renderTasks() {
     done.innerHTML='<svg fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.5 5 5L19.5 6"/></svg>';
     done.addEventListener("click",()=>{
       if(record.done) {
-        if(!confirm("Vil du fortryde gennemførelsen? Dagens point trækkes tilbage.")) return;
         record.done=false;
-        save();
-        renderTasks();
       } else {
         record.done=true;
-        save();
+        if(record.value === 0) record.value = task.max;
         animateCoins(done);
-        renderTasks();
       }
+      save();
+      renderTasks();
     });
 
     right.append(value,done);
@@ -653,7 +659,7 @@ function renderTasks() {
     const meta=document.createElement("div");
     meta.className="task-meta";
     const min=document.createElement("span");
-    min.textContent="MIN. "+format(minPoints(task));
+    min.textContent="0 PT";
     const max=document.createElement("span");
     max.textContent="MAX. "+format(task.max);
     meta.append(min,max);
