@@ -186,6 +186,7 @@ let state = load();
 let currentDate = localDate();
 let selectedWeek = weekKey(new Date());
 let soundContext = null;
+let isInTouchMode = false;
 
 function save() {
   state.lastDate = localDate();
@@ -403,6 +404,7 @@ function renderTasks() {
     const del=document.createElement("button");
     del.className="delete-button";
     del.textContent="Slet opgave";
+    del.style.display = isInTouchMode ? "none" : "block";
     del.addEventListener("click",()=>{
       if(!confirm(`Slet "${task.title}"? Opgaven kommer ikke med på fremtidige dage.`)) return;
       state.tasks=state.tasks.filter(t=>t.id!==task.id);
@@ -414,6 +416,8 @@ function renderTasks() {
 
     card.append(head,area,meta,actions);
     list.append(card);
+
+    if(isInTouchMode) attachSwipeDelete(card,task);
 
     if(!record.done) attachSlider(slider,task,record,fill,thumb,tooltip,value);
   });
@@ -480,6 +484,38 @@ function attachSlider(slider,task,record,fill,thumb,tooltip,valueEl) {
     update(rect.left+ratio*rect.width);
     save();
   });
+}
+
+/* Swipe-to-delete for touch users – drag left on the task card to clear it */
+function attachSwipeDelete(card,task) {
+  let startX=null;
+
+  card.addEventListener("touchstart",e=>{
+    if(isInTouchMode) startX=e.touches[0].clientX;
+  });
+
+  card.addEventListener("touchmove",e=>{
+    if(startX===null) return;
+    const dx=e.touches[0].clientX-startX;
+    if(dx < -card.getBoundingClientRect().width*0.25) {
+      card.style.opacity="0.6";
+    }
+  });
+
+  function endSwipe(e) {
+    if(startX===null) return;
+    const dx=e.changedTouches[0].clientX-startX;
+    startX=null;
+    card.style.opacity="";
+    if(dx < -card.getBoundingClientRect().width*0.3) {
+      state.tasks=state.tasks.filter(t=>t.id!==task.id);
+      save();
+      renderTasks();
+    }
+  }
+
+  card.addEventListener("touchend",endSwipe);
+  card.addEventListener("touchcancel",endSwipe);
 }
 
 /* Weekly history */
@@ -652,6 +688,11 @@ $("task-form").addEventListener("submit",e=>{
   closeModal();
   renderTasks();
 });
+
+// Detect touch mode
+document.addEventListener("touchstart",()=>{isInTouchMode=true});
+document.addEventListener("touchend",()=>{isInTouchMode=false});
+document.addEventListener("mousemove",()=>{isInTouchMode=false});
 
 /* Sound */
 $("sound-button").addEventListener("click",()=>{
