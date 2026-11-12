@@ -88,7 +88,9 @@ main {flex:1;padding:20px 24px 28px}
   border:2px solid var(--ink);border-radius:var(--radius);
   padding:17px;background:white;
   box-shadow:3px 3px 0 var(--ink);
-  transition:background .2s,border-color .2s,box-shadow .2s;
+  transition:background .2s,border-color .2s,box-shadow .2s,transform .2s,opacity .2s;
+  position:relative;
+  overflow:hidden;
 }
 .task.completed {
   background:#fafaf8;border-color:#deded9;box-shadow:none;

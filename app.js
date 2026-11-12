@@ -377,31 +377,54 @@ function attachSlider(slider,task,record,fill,thumb,tooltip,valueEl) {
   });
 }
 
-/* Swipe-to-delete for touch users – drag left on the task card to clear it */
+/* Swipe-to-delete for touch users – iOS-style slide-left to delete */
 function attachSwipeDelete(card,task) {
+  const slider = card.querySelector(".slider");
   let startX=null;
+  let currentDx=0;
 
   card.addEventListener("touchstart",e=>{
-    if(isInTouchMode) startX=e.touches[0].clientX;
+    if(!isInTouchMode) return;
+    // Don't hijack touches that start on the slider (value adjustment)
+    if (slider && slider.contains(e.target)) { startX=null; return; }
+    startX=e.touches[0].clientX;
+    currentDx=0;
+    card.style.transition="none";
   });
 
   card.addEventListener("touchmove",e=>{
     if(startX===null) return;
     const dx=e.touches[0].clientX-startX;
-    if(dx < -card.getBoundingClientRect().width*0.25) {
-      card.style.opacity="0.6";
+    if (dx > 0) { // only allow left swipe
+      currentDx=0;
+      card.style.transform="translateX(0)";
+      return;
     }
+    currentDx = Math.max(dx, -90);
+    card.style.transform=`translateX(${currentDx}px)`;
+    // reveal delete affordance via background color
+    const progress = Math.min(1, Math.abs(currentDx)/90);
+    card.style.backgroundColor = progress > 0.6 ? "#fee2e2" : "";
   });
 
   function endSwipe(e) {
     if(startX===null) return;
-    const dx=e.changedTouches[0].clientX-startX;
+    const dx = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0].clientX - startX : currentDx;
     startX=null;
-    card.style.opacity="";
-    if(dx < -card.getBoundingClientRect().width*0.3) {
-      state.tasks=state.tasks.filter(t=>t.id!==task.id);
-      save();
-      renderTasks();
+    card.style.transition="transform .2s ease, background-color .2s";
+    if (dx < -60) {
+      // slide out then delete
+      card.style.transform="translateX(-100%)";
+      card.style.opacity="0";
+      setTimeout(() => {
+        state.tasks=state.tasks.filter(t=>t.id!==task.id);
+        save();
+        renderTasks();
+      }, 200);
+    } else {
+      card.style.transform="translateX(0)";
+      card.style.backgroundColor="";
+      card.style.opacity="";
     }
   }
 
