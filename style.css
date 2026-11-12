@@ -140,6 +140,10 @@ main {flex:1;padding:20px 24px 28px}
 .slider:focus-visible .thumb {transform:translate(-50%,-50%) scale(1)}
 .slider.locked {cursor:default;opacity:.8;touch-action:auto}
 .slider.locked .thumb {transform:translate(-50%,-50%) scale(0)}
+/* Creation slider: thumb always visible */
+.create-slider .thumb {transform:translate(-50%,-50%) scale(1)}
+.create-slider:active .thumb,.create-slider.dragging .thumb {transform:translate(-50%,-50%) scale(1)}
+.create-slider:focus-visible .thumb {transform:translate(-50%,-50%) scale(1)}
 .tooltip {
   position:absolute;bottom:29px;left:0%;
   transform:translateX(-50%) translateY(4px);
@@ -281,6 +285,19 @@ footer {
 .save-button:active {transform:translate(2px,2px);box-shadow:none}
 .error {font-size:11px;color:#b33;min-height:16px}
 
+/* Settings */
+.settings-button {
+  border:1px solid #ddd;background:white;border-radius:9px;
+  padding:8px 11px;font-size:11px;font-weight:600;color:#555;
+}
+.theme-row {display:flex;gap:8px;margin-top:4px}
+.theme-button {
+  flex:1;border:2px solid var(--line);background:white;
+  border-radius:10px;padding:10px;font-size:12px;font-weight:700;color:#888;
+  transition:all .15s;
+}
+.theme-button.active {background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
 /* Coins */
 .coin-particle {
   position:fixed;z-index:50;width:20px;height:20px;
@@ -294,6 +311,46 @@ footer {
 }
 .coin-bounce {animation:bounce .4s ease}
 @keyframes bounce {50%{transform:scale(1.18) rotate(-8deg)}}
+/* Dark mode */
+html.dark {
+  --bg:#121212;
+  --paper:#1e1e1e;
+  --ink:#e8e8e8;
+  --muted:#999;
+  --line:#333;
+  --yellow:#fbbf24;
+  --yellow-dark:#e6a900;
+  --green:#4ade80;
+  --radius:18px;
+}
+html.dark body {background:var(--paper)}
+html.dark .tabs {background:#2a2a2a}
+html.dark .tab.active {background:#333}
+html.dark .task {background:var(--paper);border-color:var(--ink);box-shadow:3px 3px 0 var(--ink)}
+html.dark .task.completed {background:#252525;border-color:#444;box-shadow:none}
+html.dark .completed .task-title {color:#666}
+html.dark .completed .task-value {color:#666}
+html.dark .done-button {background:var(--paper);border-color:var(--ink)}
+html.dark .completed .done-button {background:var(--ink);color:var(--paper)}
+html.dark .track {background:#333}
+html.dark .tooltip {background:var(--ink);color:var(--paper)}
+html.dark .empty {border-color:#444}
+html.dark footer {background:#1a1a1a}
+html.dark .week-card {border-color:#333;background:var(--paper)}
+html.dark .week-card.selected {border-color:var(--ink)}
+html.dark .nav-button {border-color:var(--line);background:var(--paper)}
+html.dark .settings-button {border-color:#444;background:var(--paper);color:var(--muted)}
+html.dark .field input {border-color:#444;background:var(--paper);color:var(--ink)}
+html.dark .modal {background:var(--paper)}
+html.dark .overlay {background:#000a}
+html.dark .close-button {color:var(--muted)}
+html.dark .chart-dot {fill:var(--paper);stroke:var(--ink)}
+html.dark .icon-button {background:var(--ink);color:var(--paper)}
+html.dark .theme-button {background:var(--paper);border-color:var(--line);color:var(--muted)}
+html.dark .theme-button.active {background:var(--ink);color:var(--paper);border-color:var(--ink)}
+html.dark .range-slider {background:#333}
+html.dark .range-slider::-webkit-slider-thumb {background:var(--yellow);border-color:var(--ink)}
+
 @media(min-width:700px) {
   body {padding:35px 15px}
   .app {min-height:calc(100vh - 70px);border-radius:24px;overflow:hidden;box-shadow:0 15px 50px #0000000c}

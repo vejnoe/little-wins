@@ -79,7 +79,7 @@
 <footer>
   <div class="footer-row">
     <span id="footer-date"></span>
-    <button class="sound-button" id="sound-button">♫ Lyd til</button>
+    <button class="settings-button" id="settings-button">⚙ Indstillinger</button>
   </div>
 </footer>
 
@@ -88,23 +88,10 @@
 <div class="overlay hidden" id="overlay">
   <div class="modal">
     <div class="modal-head">
-      <h2>Opret ny opgave</h2>
+      <h2 id="modal-title"></h2>
       <button class="close-button" id="close-modal" aria-label="Luk">×</button>
     </div>
-    <form id="task-form">
-      <div class="field">
-        <label for="task-name">Opgavens navn</label>
-        <input id="task-name" maxlength="60" placeholder="F.eks. Gåtur, Ryd op..." required>
-      </div>
-      <div class="field">
-        <label for="task-max">Maksimale point</label>
-        <input id="task-max" type="range" min="0" max="15000" step="1" placeholder="F.eks. 15000" required class="range-slider">
-        <div class="range-value" id="slider-value">0</div>
-        <div class="hint">Træk skyderen for at vælge maksimal point.</div>
-      </div>
-      <div class="error" id="form-error"></div>
-      <button class="save-button" type="submit">Gem opgave</button>
-    </form>
+    <div id="modal-body"></div>
   </div>
 </div>
 

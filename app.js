@@ -1,7 +1,7 @@
 (() => {
 "use strict";
 
-const STORAGE_KEY = "little_wins_v1";
+const STORAGE_KEY = "little_wins_v2";
 const DAY_NAMES = ["Man","Tir","Ons","Tor","Fre","Lør","Søn"];
 const $ = id => document.getElementById(id);
 
@@ -13,11 +13,6 @@ const coinSVG = size => `
 </svg>`;
 
 const format = n => Math.round(n).toLocaleString("da-DK");
-
-/* Live value display for task creation slider */
-$("task-max").addEventListener("input",function(){
-  $("slider-value").textContent = format(Number(this.value));
-});
 
 function localDate(date = new Date()) {
   return date.getFullYear() + "-" +
@@ -57,7 +52,7 @@ function weekLabel(date) {
   return `Uge ${w.week} · ${w.year}`;
 }
 function minPoints(task) {
-  return 0;
+  return (task && task.min) ? task.min : 0;
 }
 function clamp(value,min,max) {
   return Math.max(min,Math.min(max,value));
@@ -68,14 +63,32 @@ function load() {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (saved && Array.isArray(saved.tasks) && saved.days) return saved;
   } catch(e) {}
-  return {tasks:[],days:{},sound:true,lastDate:null};
+  return {tasks:[],days:{},sound:true,lastDate:null,theme:"system"};
 }
 
 let state = load();
+if(!state.theme) state.theme="system";
 let currentDate = localDate();
 let selectedWeek = weekKey(new Date());
 let soundContext = null;
 let isInTouchMode = false;
+
+function systemPrefersDark() {
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+function applyTheme() {
+  const theme = state.theme || "system";
+  const dark = theme === "dark" || (theme === "system" && systemPrefersDark());
+  document.documentElement.classList.toggle("dark", dark);
+}
+
+// React to system preference changes when in system mode
+if (window.matchMedia) {
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if ((state.theme || "system") === "system") applyTheme();
+  });
+}
 
 function save() {
   state.lastDate = localDate();
@@ -280,14 +293,6 @@ function renderTasks() {
     slider.append(track,thumb,tooltip);
     area.append(slider);
 
-    const meta=document.createElement("div");
-    meta.className="task-meta";
-    const min=document.createElement("span");
-    min.textContent="0 PT";
-    const max=document.createElement("span");
-    max.textContent="MAX. "+format(task.max);
-    meta.append(min,max);
-
     const actions=document.createElement("div");
     actions.className="task-actions";
     const del=document.createElement("button");
@@ -303,7 +308,7 @@ function renderTasks() {
     });
     actions.append(del);
 
-    card.append(head,area,meta,actions);
+    card.append(head,area,actions);
     list.append(card);
 
     if(isInTouchMode) attachSwipeDelete(card,task);
@@ -536,59 +541,248 @@ document.querySelectorAll(".tab").forEach(tab=>{
 $("week-prev").addEventListener("click",()=>changeWeek(-1));
 $("week-next").addEventListener("click",()=>changeWeek(1));
 
-/* Task creation */
-function openModal() {
+/* Modal system (reused for create + settings) */
+let currentModal = null;
+let createMax = 1000;
+
+function openModal(type) {
+  currentModal = type;
+  const title = type === "create" ? "Opret ny opgave" : "Indstillinger";
+  $("modal-title").textContent = title;
+  const body = $("modal-body");
+  body.replaceChildren();
+  if (type === "create") renderCreateForm(body);
+  else renderSettingsForm(body);
   $("overlay").classList.remove("hidden");
-  $("task-name").focus();
+  // focus first input if any
+  const firstInput = body.querySelector("input,button");
+  if (firstInput) firstInput.focus();
 }
+
 function closeModal() {
   $("overlay").classList.add("hidden");
-  $("task-form").reset();
-  $("form-error").textContent="";
+  $("modal-body").replaceChildren();
+  currentModal = null;
 }
-$("add-button").addEventListener("click",openModal);
-$("close-modal").addEventListener("click",closeModal);
-$("overlay").addEventListener("click",e=>{
-  if(e.target===$("overlay")) closeModal();
+
+$("add-button").addEventListener("click", () => openModal("create"));
+$("settings-button").addEventListener("click", () => openModal("settings"));
+$("close-modal").addEventListener("click", closeModal);
+$("overlay").addEventListener("click", e => {
+  if (e.target === $("overlay")) closeModal();
 });
-document.addEventListener("keydown",e=>{
-  if(e.key==="Escape") closeModal();
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closeModal();
 });
 
-$("task-form").addEventListener("submit",e=>{
-  e.preventDefault();
-  const title=$("task-name").value.trim();
-  const max=Number($("task-max").value);
+/* Create task form */
+function renderCreateForm(body) {
+  const nameField = document.createElement("div");
+  nameField.className = "field";
+  const nameLabel = document.createElement("label");
+  nameLabel.textContent = "Opgavens navn";
+  const nameInput = document.createElement("input");
+  nameInput.id = "task-name";
+  nameInput.maxLength = 60;
+  nameInput.placeholder = "F.eks. Gåtur, Ryd op...";
+  nameInput.required = true;
+  nameField.append(nameLabel, nameInput);
 
-  if(!title) {
-    $("form-error").textContent="Skriv et navn til opgaven.";
+  const maxField = document.createElement("div");
+  maxField.className = "field";
+  const maxLabel = document.createElement("label");
+  maxLabel.textContent = "Maksimale point";
+  const sliderArea = document.createElement("div");
+  sliderArea.className = "slider-area";
+  const slider = document.createElement("div");
+  slider.className = "slider create-slider";
+  slider.setAttribute("role", "slider");
+  slider.setAttribute("tabindex", "0");
+  slider.setAttribute("aria-label", "Maksimale point");
+  const track = document.createElement("div");
+  track.className = "track";
+  const fill = document.createElement("div");
+  fill.className = "fill";
+  track.append(fill);
+  const thumb = document.createElement("div");
+  thumb.className = "thumb";
+  const tooltip = document.createElement("div");
+  tooltip.className = "tooltip num";
+  slider.append(track, thumb, tooltip);
+  sliderArea.append(slider);
+  const valueDisplay = document.createElement("div");
+  valueDisplay.className = "range-value";
+  valueDisplay.id = "slider-value";
+  const hint = document.createElement("div");
+  hint.className = "hint";
+  hint.textContent = "Træk skyderen for at vælge maksimal point.";
+  maxField.append(maxLabel, sliderArea, valueDisplay, hint);
+
+  const error = document.createElement("div");
+  error.className = "error";
+  error.id = "form-error";
+
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "save-button";
+  saveBtn.type = "button";
+  saveBtn.textContent = "Gem opgave";
+  saveBtn.addEventListener("click", submitTask);
+
+  body.append(nameField, maxField, error, saveBtn);
+
+  // wire slider: range 1000..1000000
+  const MIN = 1000;
+  const MAX = 1000000;
+  createMax = MIN;
+  const record = { value: createMax, done: false };
+  const task = { min: MIN, max: MAX };
+  const percent = ((createMax - MIN) / (MAX - MIN)) * 100;
+  fill.style.width = percent + "%";
+  thumb.style.left = percent + "%";
+  tooltip.style.left = percent + "%";
+  tooltip.textContent = format(createMax);
+  valueDisplay.textContent = format(createMax);
+  slider.setAttribute("aria-valuemin", MIN);
+  slider.setAttribute("aria-valuemax", MAX);
+  slider.setAttribute("aria-valuenow", createMax);
+
+  attachCreateSlider(slider, task, record, fill, thumb, tooltip, valueDisplay);
+}
+
+function submitTask() {
+  const title = $("task-name").value.trim();
+  const max = createMax;
+  if (!title) {
+    $("form-error").textContent = "Skriv et navn til opgaven.";
     return;
   }
-  if(!Number.isSafeInteger(max)||max<1000) {
-    $("form-error").textContent="Maksimale point skal være mindst 1.000.";
+  if (!Number.isSafeInteger(max) || max < 1000) {
+    $("form-error").textContent = "Maksimale point skal være mindst 1.000.";
     return;
   }
-
-  const task={id:crypto.randomUUID(),title,max};
+  const task = { id: crypto.randomUUID(), title, max };
   state.tasks.push(task);
   ensureToday();
   entry(task);
   save();
   closeModal();
   renderTasks();
-});
+}
+
+function attachCreateSlider(slider, task, record, fill, thumb, tooltip, valueEl) {
+  let dragging = false;
+  let lastTick = record.value;
+  const MIN = task.min;
+  const MAX = task.max;
+
+  function update(clientX) {
+    const rect = slider.getBoundingClientRect();
+    const ratio = clamp((clientX - rect.left) / rect.width, 0, 1);
+    const next = Math.round(MIN + (MAX - MIN) * ratio);
+    const percent = ratio * 100;
+    record.value = next;
+    createMax = next;
+    fill.style.width = percent + "%";
+    thumb.style.left = percent + "%";
+    tooltip.style.left = percent + "%";
+    tooltip.textContent = format(next);
+    valueEl.textContent = format(next);
+    slider.setAttribute("aria-valuenow", next);
+    if (Math.abs(next - lastTick) >= Math.max(1, (MAX - MIN) / 30)) {
+      playTone(480, .025);
+      lastTick = next;
+    }
+    renderHeader();
+  }
+
+  slider.addEventListener("pointerdown", e => {
+    dragging = true;
+    slider.classList.add("dragging");
+    slider.setPointerCapture(e.pointerId);
+    update(e.clientX);
+  });
+  slider.addEventListener("pointermove", e => {
+    if (dragging) update(e.clientX);
+  });
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false;
+    slider.classList.remove("dragging");
+    save();
+  }
+  slider.addEventListener("pointerup", endDrag);
+  slider.addEventListener("pointercancel", endDrag);
+  slider.addEventListener("lostpointercapture", endDrag);
+  slider.addEventListener("keydown", e => {
+    let next = record.value;
+    const step = Math.max(1, Math.round((MAX - MIN) / 100));
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") next += step;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowDown") next -= step;
+    else if (e.key === "Home") next = MIN;
+    else if (e.key === "End") next = MAX;
+    else return;
+    e.preventDefault();
+    next = clamp(next, MIN, MAX);
+    const rect = slider.getBoundingClientRect();
+    const ratio = (next - MIN) / (MAX - MIN);
+    record.value = next;
+    createMax = next;
+    update(rect.left + ratio * rect.width);
+    save();
+  });
+}
+
+/* Settings form */
+function renderSettingsForm(body) {
+  // Theme selector
+  const themeField = document.createElement("div");
+  themeField.className = "field";
+  const themeLabel = document.createElement("label");
+  themeLabel.textContent = "Tema";
+  const themeRow = document.createElement("div");
+  themeRow.className = "theme-row";
+  ["system", "light", "dark"].forEach(t => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "theme-button" + ((state.theme || "system") === t ? " active" : "");
+    btn.textContent = t === "system" ? "System" : t === "light" ? "Lys" : "Mørk";
+    btn.addEventListener("click", () => {
+      state.theme = t;
+      save();
+      applyTheme();
+      // update active states
+      themeRow.querySelectorAll(".theme-button").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+    });
+    themeRow.append(btn);
+  });
+  themeField.append(themeLabel, themeRow);
+
+  // Sound toggle
+  const soundField = document.createElement("div");
+  soundField.className = "field";
+  const soundLabel = document.createElement("label");
+  soundLabel.textContent = "Lyd";
+  const soundBtn = document.createElement("button");
+  soundBtn.type = "button";
+  soundBtn.className = "save-button";
+  soundBtn.textContent = state.sound ? "♫ Lyd til" : "♫ Lyd fra";
+  soundBtn.addEventListener("click", () => {
+    state.sound = !state.sound;
+    save();
+    soundBtn.textContent = state.sound ? "♫ Lyd til" : "♫ Lyd fra";
+  });
+  soundField.append(soundLabel, soundBtn);
+
+  body.append(themeField, soundField);
+}
 
 // Detect touch mode
 document.addEventListener("touchstart",()=>{isInTouchMode=true});
 document.addEventListener("touchend",()=>{isInTouchMode=false});
 document.addEventListener("mousemove",()=>{isInTouchMode=false});
 
-/* Sound */
-$("sound-button").addEventListener("click",()=>{
-  state.sound=!state.sound;
-  $("sound-button").textContent=state.sound?"♫ Lyd til":"♫ Lyd fra";
-  save();
-});
+/* Sound toggle moved to settings modal */
 
 /* Day rollover */
 function checkDate() {
@@ -608,7 +802,7 @@ window.addEventListener("focus",checkDate);
 setInterval(checkDate,60000);
 
 /* Initialisation */
+applyTheme();
 ensureToday();
-$("sound-button").textContent=state.sound?"♫ Lyd til":"♫ Lyd fra";
 renderTasks();
 })();
