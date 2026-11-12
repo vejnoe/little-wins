@@ -175,6 +175,50 @@ footer {
   padding:8px 11px;font-size:11px;font-weight:600;color:#555;
 }
 
+/* Range slider for task creation modal – matches .slider task styling */
+.range-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 25px;
+  background: #e4e4e0;
+  border-radius: 20px;
+  outline: none;
+  margin: 4px 0;
+}
+.range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: var(--yellow);
+  border: 3px solid var(--ink);
+  cursor: pointer;
+  transform: translate(-50%,-50%) scale(0);
+  transition: transform .15s;
+}
+.range-slider::-moz-range-thumb {
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: var(--yellow);
+  border: 3px solid var(--ink);
+  cursor: pointer;
+}
+.range-slider:active::-webkit-slider-thumb,
+.range-slider.dragging::-webkit-slider-thumb {
+  transform: translate(-50%,-50%) scale(1);
+}
+.range-slider:focus-visible::-webkit-slider-thumb {
+  transform: translate(-50%,-50%) scale(1);
+}
+.range-value {
+  text-align: center;
+  font: 700 14px "Space Grotesk",sans-serif;
+  color: var(--ink);
+  margin-top: 4px;
+}
+
 /* History */
 .week-nav {display:flex;align-items:center;gap:12px}
 .nav-button {
