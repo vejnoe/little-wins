@@ -203,7 +203,6 @@ function renderTasks() {
 
   const list=$("task-list");
   list.replaceChildren();
-  $("task-count").textContent=state.tasks.length ? state.tasks.length+" i dag" : "";
 
   if(!state.tasks.length) {
     const empty=document.createElement("div");
