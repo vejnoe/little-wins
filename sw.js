@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wins-v2';
+const CACHE_NAME = 'wins-v3';
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
