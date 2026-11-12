@@ -628,6 +628,8 @@ function renderCreateForm(body) {
   saveBtn.type = "button";
   saveBtn.textContent = "Gem opgave";
   saveBtn.addEventListener("click", submitTask);
+  // Fallback for touch devices where click may not fire
+  saveBtn.addEventListener("touchend", (e) => { e.preventDefault(); submitTask(); });
 
   body.append(nameField, maxField, error, saveBtn);
 
@@ -651,23 +653,30 @@ function renderCreateForm(body) {
 }
 
 function submitTask() {
-  const title = $("task-name").value.trim();
-  const max = createMax;
-  if (!title) {
-    $("form-error").textContent = "Skriv et navn til opgaven.";
-    return;
+  try {
+    const title = $("task-name").value.trim();
+    const max = createMax;
+    if (!title) {
+      $("form-error").textContent = "Skriv et navn til opgaven.";
+      return;
+    }
+    if (!Number.isSafeInteger(max) || max < 1000) {
+      $("form-error").textContent = "Maksimale point skal være mindst 1.000.";
+      return;
+    }
+    const id = (crypto.randomUUID && typeof crypto.randomUUID === "function")
+      ? crypto.randomUUID()
+      : (Date.now().toString(36) + Math.random().toString(36).slice(2));
+    const task = { id, title, max };
+    state.tasks.push(task);
+    ensureToday();
+    entry(task);
+    save();
+    closeModal();
+    renderTasks();
+  } catch (e) {
+    $("form-error").textContent = "Fejl: " + (e && e.message ? e.message : e);
   }
-  if (!Number.isSafeInteger(max) || max < 1000) {
-    $("form-error").textContent = "Maksimale point skal være mindst 1.000.";
-    return;
-  }
-  const task = { id: crypto.randomUUID(), title, max };
-  state.tasks.push(task);
-  ensureToday();
-  entry(task);
-  save();
-  closeModal();
-  renderTasks();
 }
 
 function attachCreateSlider(slider, task, record, fill, thumb, tooltip, valueEl) {
