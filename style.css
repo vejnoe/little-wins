@@ -18,7 +18,7 @@ body {
   -webkit-font-smoothing:antialiased;
 }
 button,input {font:inherit}
-button {cursor:pointer}
+button {cursor:pointer;-webkit-appearance:none;appearance:none}
 .num {font-variant-numeric:tabular-nums}
 .heading {font-family:"Space Grotesk",sans-serif}
 .app {
@@ -279,8 +279,9 @@ footer {
 .hint {font-size:10px;color:#999;margin-top:6px}
 .save-button {
   width:100%;border:2px solid var(--ink);border-radius:12px;
-  background:var(--yellow);padding:14px;font-weight:700;
+  background:var(--yellow);color:var(--ink);padding:14px;font-weight:700;
   box-shadow:2px 2px 0 var(--ink);
+  -webkit-appearance:none;appearance:none;
 }
 .save-button:active {transform:translate(2px,2px);box-shadow:none}
 .error {font-size:11px;color:#b33;min-height:16px}

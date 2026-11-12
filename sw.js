@@ -1,4 +1,12 @@
-const CACHE_NAME = 'wins-v1';
+const CACHE_NAME = 'wins-v2';
+
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+    )
+  );
+});
 const ASSETS = [
   './',
   './index.html',

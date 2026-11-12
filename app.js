@@ -63,11 +63,11 @@ function load() {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (saved && Array.isArray(saved.tasks) && saved.days) return saved;
   } catch(e) {}
-  return {tasks:[],days:{},sound:true,lastDate:null,theme:"system"};
+  return {tasks:[],days:{},sound:true,lastDate:null,theme:"light"};
 }
 
 let state = load();
-if(!state.theme) state.theme="system";
+if(!state.theme) state.theme="light";
 let currentDate = localDate();
 let selectedWeek = weekKey(new Date());
 let soundContext = null;
@@ -194,9 +194,7 @@ function renderHeader() {
   $("today-label").textContent=new Intl.DateTimeFormat("da-DK",{
     weekday:"long",day:"numeric",month:"short"
   }).format(new Date());
-  $("footer-date").textContent=new Intl.DateTimeFormat("da-DK",{
-    weekday:"long",day:"numeric",month:"long"
-  }).format(new Date());
+  // footer date removed per request
 }
 
 function renderTasks() {
@@ -205,7 +203,7 @@ function renderTasks() {
 
   const list=$("task-list");
   list.replaceChildren();
-  $("task-count").textContent=state.tasks.length+" OPGAVER";
+  $("task-count").textContent=state.tasks.length ? state.tasks.length+" i dag" : "";
 
   if(!state.tasks.length) {
     const empty=document.createElement("div");
@@ -573,6 +571,10 @@ $("overlay").addEventListener("click", e => {
 });
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") closeModal();
+  if (e.key === "Enter" && currentModal === "create") {
+    e.preventDefault();
+    submitTask();
+  }
 });
 
 /* Create task form */
