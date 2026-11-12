@@ -541,6 +541,7 @@ $("week-next").addEventListener("click",()=>changeWeek(1));
 /* Modal system (reused for create + settings) */
 let currentModal = null;
 let createMax = 1000;
+let submitting = false;
 
 function openModal(type) {
   currentModal = type;
@@ -628,8 +629,6 @@ function renderCreateForm(body) {
   saveBtn.type = "button";
   saveBtn.textContent = "Gem opgave";
   saveBtn.addEventListener("click", submitTask);
-  // Fallback for touch devices where click may not fire
-  saveBtn.addEventListener("touchend", (e) => { e.preventDefault(); submitTask(); });
 
   body.append(nameField, maxField, error, saveBtn);
 
@@ -653,6 +652,8 @@ function renderCreateForm(body) {
 }
 
 function submitTask() {
+  if (submitting) return;
+  submitting = true;
   try {
     const title = $("task-name").value.trim();
     const max = createMax;
@@ -676,6 +677,8 @@ function submitTask() {
     renderTasks();
   } catch (e) {
     $("form-error").textContent = "Fejl: " + (e && e.message ? e.message : e);
+  } finally {
+    submitting = false;
   }
 }
 
