@@ -746,6 +746,41 @@ function attachCreateSlider(slider, task, record, fill, thumb, tooltip, valueEl)
 }
 
 /* Settings form */
+function exportData() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "little-wins-backup.json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importData(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      if (!parsed || !Array.isArray(parsed.tasks) || !parsed.days) {
+        alert("Ugyldig backup-fil.");
+        return;
+      }
+      state = parsed;
+      if (!state.theme) state.theme = "light";
+      if (state.sound === undefined) state.sound = true;
+      save();
+      applyTheme();
+      renderTasks();
+      closeModal();
+    } catch (err) {
+      alert("Kunne ikke læse filen: " + (err && err.message ? err.message : err));
+    }
+  };
+  reader.readAsText(file);
+}
+
 function renderSettingsForm(body) {
   // Theme selector
   const themeField = document.createElement("div");
@@ -757,13 +792,12 @@ function renderSettingsForm(body) {
   ["system", "light", "dark"].forEach(t => {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "theme-button" + ((state.theme || "system") === t ? " active" : "");
+    btn.className = "theme-button" + ((state.theme || "light") === t ? " active" : "");
     btn.textContent = t === "system" ? "System" : t === "light" ? "Lys" : "Mørk";
     btn.addEventListener("click", () => {
       state.theme = t;
       save();
       applyTheme();
-      // update active states
       themeRow.querySelectorAll(".theme-button").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
     });
@@ -776,18 +810,59 @@ function renderSettingsForm(body) {
   soundField.className = "field";
   const soundLabel = document.createElement("label");
   soundLabel.textContent = "Lyd";
-  const soundBtn = document.createElement("button");
-  soundBtn.type = "button";
-  soundBtn.className = "save-button";
-  soundBtn.textContent = state.sound ? "♫ Lyd til" : "♫ Lyd fra";
-  soundBtn.addEventListener("click", () => {
+  const toggleRow = document.createElement("div");
+  toggleRow.className = "toggle-row";
+  const toggleLabel = document.createElement("span");
+  toggleLabel.className = "toggle-label";
+  toggleLabel.textContent = state.sound ? "Til" : "Fra";
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "toggle" + (state.sound ? " on" : "");
+  toggle.addEventListener("click", () => {
     state.sound = !state.sound;
     save();
-    soundBtn.textContent = state.sound ? "♫ Lyd til" : "♫ Lyd fra";
+    toggle.classList.toggle("on", state.sound);
+    toggleLabel.textContent = state.sound ? "Til" : "Fra";
   });
-  soundField.append(soundLabel, soundBtn);
+  toggleRow.append(toggleLabel, toggle);
+  soundField.append(soundLabel, toggleRow);
 
-  body.append(themeField, soundField);
+  // Data backup
+  const dataField = document.createElement("div");
+  dataField.className = "field";
+  const dataLabel = document.createElement("label");
+  dataLabel.textContent = "Data";
+  const dataRow = document.createElement("div");
+  dataRow.className = "data-row";
+  const exportBtn = document.createElement("button");
+  exportBtn.type = "button";
+  exportBtn.className = "data-button";
+  exportBtn.textContent = "Eksportér JSON";
+  exportBtn.addEventListener("click", exportData);
+  const importBtn = document.createElement("button");
+  importBtn.type = "button";
+  importBtn.className = "data-button";
+  importBtn.textContent = "Importér JSON";
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = "application/json";
+  fileInput.style.display = "none";
+  fileInput.addEventListener("change", (e) => {
+    if (e.target.files && e.target.files[0]) importData(e.target.files[0]);
+    e.target.value = "";
+  });
+  importBtn.addEventListener("click", () => fileInput.click());
+  dataRow.append(exportBtn, importBtn, fileInput);
+  dataField.append(dataLabel, dataRow);
+
+  // Save settings button
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "save-button";
+  saveBtn.type = "button";
+  saveBtn.textContent = "Gem indstillinger";
+  saveBtn.addEventListener("click", closeModal);
+
+  body.append(themeField, soundField, dataField, saveBtn);
 }
 
 // Detect touch mode
