@@ -2,6 +2,8 @@ const CACHE_NAME = 'wins-v1';
 const ASSETS = [
   './',
   './index.html',
+  './style.css',
+  './app.js',
   './manifest.json'
 ];
 
