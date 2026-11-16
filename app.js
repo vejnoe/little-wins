@@ -1,7 +1,7 @@
 (() => {
 "use strict";
 
-const STORAGE_KEY = "little_wins_v2";
+const STORAGE_KEY = "little_wins_v1";
 const DAY_NAMES = ["Man","Tir","Ons","Tor","Fre","Lør","Søn"];
 const $ = id => document.getElementById(id);
 
@@ -71,22 +71,26 @@ if(!state.theme) state.theme="light";
 let currentDate = localDate();
 let selectedWeek = weekKey(new Date());
 let soundContext = null;
-let isInTouchMode = false;
+// Touch vs. desktop: (hover: none) matches tablets/phones. Stable across renders
+// so swipe-to-delete is attached on first load, not only after a touch event.
+let isInTouchMode = !!(window.matchMedia && window.matchMedia("(hover: none)").matches);
 
 function systemPrefersDark() {
   return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
 function applyTheme() {
-  const theme = state.theme || "system";
+  const theme = state.theme || "light";
   const dark = theme === "dark" || (theme === "system" && systemPrefersDark());
   document.documentElement.classList.toggle("dark", dark);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", dark ? "#121212" : "#f7f6f2");
 }
 
 // React to system preference changes when in system mode
 if (window.matchMedia) {
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-    if ((state.theme || "system") === "system") applyTheme();
+    if ((state.theme || "light") === "system") applyTheme();
   });
 }
 
@@ -548,7 +552,6 @@ function showView(view) {
     tab.classList.toggle("active",tab.dataset.view===view);
   });
   $("add-button").hidden=view!=="today";
-  $("header-label").textContent=view==="today"?"Dagens point":"Dagens point";
   if(view==="history") {
     selectedWeek=weekKey(new Date());
     renderHistory();
@@ -887,11 +890,6 @@ function renderSettingsForm(body) {
 
   body.append(themeField, soundField, dataField, saveBtn);
 }
-
-// Detect touch mode
-document.addEventListener("touchstart",()=>{isInTouchMode=true});
-document.addEventListener("touchend",()=>{isInTouchMode=false});
-document.addEventListener("mousemove",()=>{isInTouchMode=false});
 
 /* Sound toggle moved to settings modal */
 
