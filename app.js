@@ -478,24 +478,38 @@ function makeSparkline(scores) {
   </svg>`;
 }
 
+// The first week is the week the user started – never show weeks before that.
+function firstWeekKey() {
+  const keys=Object.keys(state.days).sort();
+  return keys.length ? weekKey(dateFromKey(keys[0])) : weekKey(new Date());
+}
+
 function renderHistory() {
   const list=$("week-list");
   list.replaceChildren();
 
+  const currentKey=weekKey(new Date());
+  const startWeek=firstWeekKey();
+  if(selectedWeek<startWeek) selectedWeek=startWeek;
+  if(selectedWeek>currentKey) selectedWeek=currentKey;
+
   const selectedDate=weekStartFromKey(selectedWeek);
   $("week-current").textContent=weekLabel(selectedDate);
 
-  const currentKey=weekKey(new Date());
   $("week-next").disabled=selectedWeek>=currentKey;
+  $("week-prev").disabled=selectedWeek<=startWeek;
 
-  // Show the selected week and the 7 preceding weeks.
-  for(let offset=0;offset<8;offset++) {
-    const date=addDays(selectedDate,-offset*7);
+  // Show every week from the start week up to the selected week.
+  // Empty weeks in between are kept; weeks before the user started are not.
+  const startMonday=weekStartFromKey(startWeek);
+  let index=0;
+  for(let date=selectedDate;date>=startMonday;date=addDays(date,-7)) {
     const scores=weekScores(date);
     const total=scores.reduce((sum,s)=>sum+s.score,0);
 
     const card=document.createElement("article");
-    card.className="week-card"+(offset===0?" selected":"");
+    card.className="week-card"+(index===0?" selected":"");
+    index++;
 
     const head=document.createElement("div");
     head.className="week-head";
@@ -540,7 +554,10 @@ function weekStartFromKey(key) {
 
 function changeWeek(amount) {
   const next=addDays(weekStartFromKey(selectedWeek),amount*7);
-  selectedWeek=weekKey(next);
+  const nextKey=weekKey(next);
+  const startWeek=firstWeekKey();
+  if(nextKey<startWeek || nextKey>weekKey(new Date())) return;
+  selectedWeek=nextKey;
   renderHistory();
 }
 
