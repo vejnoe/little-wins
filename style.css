@@ -96,10 +96,15 @@ main {flex:1;padding:20px 24px 28px}
   background:#fafaf8;border-color:#deded9;box-shadow:none;
 }
 .card-head {gap:10px;margin-bottom:15px}
+.task-title-wrap {display:flex;align-items:center;gap:7px;min-width:0}
 .task-title {
   font:700 14px "Space Grotesk",sans-serif;
   text-transform:uppercase;letter-spacing:.3px;
   overflow-wrap:anywhere;
+}
+.recurring-badge {
+  flex:none;font-size:15px;line-height:1;color:var(--muted);
+  font-weight:700;
 }
 .completed .task-title {color:#999;text-decoration:line-through}
 .task-right {display:flex;align-items:center;gap:11px}
@@ -159,10 +164,12 @@ main {flex:1;padding:20px 24px 28px}
   margin-top:7px;font-size:10px;color:#999;
 }
 .task-actions {display:flex;justify-content:flex-end;margin-top:8px}
-.delete-button {
+.task-actions {gap:14px}
+.edit-button,.delete-button {
   border:0;background:transparent;color:#aaa;
   font-size:11px;padding:4px 0;
 }
+.edit-button:hover {color:var(--ink)}
 .delete-button:hover {color:#b33}
 .empty {
   padding:55px 15px;text-align:center;
@@ -279,6 +286,29 @@ footer {
 }
 .field input:focus {border-color:var(--ink)}
 .hint {font-size:10px;color:#999;margin-top:6px}
+
+/* Recurring checkbox */
+.field .checkbox-label {
+  display:flex;align-items:center;gap:10px;cursor:pointer;
+  font-size:13px;font-weight:600;color:var(--ink);
+  text-transform:none;letter-spacing:0;margin:0;
+}
+.field .checkbox-label input[type="checkbox"] {
+  -webkit-appearance:none;appearance:none;
+  width:22px;height:22px;flex:none;margin:0;padding:0;
+  border:2px solid var(--ink);border-radius:6px;
+  background:var(--paper);position:relative;cursor:pointer;
+  transition:background .15s,border-color .15s;
+}
+.field .checkbox-label input[type="checkbox"]:checked {background:var(--yellow)}
+.field .checkbox-label input[type="checkbox"]:checked::after {
+  content:"";position:absolute;left:5px;top:1px;
+  width:6px;height:11px;border:solid var(--ink);
+  border-width:0 2.5px 2.5px 0;transform:rotate(45deg);
+}
+.field .checkbox-label input[type="checkbox"]:focus-visible {
+  outline:2px solid var(--ink);outline-offset:2px;
+}
 .save-button {
   width:100%;border:2px solid var(--ink);border-radius:12px;
   background:var(--yellow);color:var(--ink);padding:14px;font-weight:700;
@@ -377,6 +407,10 @@ html.dark .theme-button.active {background:var(--ink);color:var(--paper);border-
 html.dark .toggle {background:#444}
 html.dark .toggle.on {background:var(--green)}
 html.dark .data-button {background:var(--paper);border-color:var(--line);color:var(--muted)}
+html.dark .field .checkbox-label input[type="checkbox"] {background:var(--paper);border-color:var(--ink)}
+html.dark .field .checkbox-label input[type="checkbox"]:checked {background:var(--yellow)}
+html.dark .edit-button {color:var(--muted)}
+html.dark .edit-button:hover {color:var(--ink)}
 html.dark .range-slider {background:#333}
 html.dark .range-slider::-webkit-slider-thumb {background:var(--yellow);border-color:var(--ink)}
 

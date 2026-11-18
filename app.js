@@ -58,10 +58,19 @@ function clamp(value,min,max) {
   return Math.max(min,Math.min(max,value));
 }
 
+// Normalise on load so old backups (without `recurring`) keep working.
+function normaliseTasks(tasks) {
+  tasks.forEach(t => { t.recurring = !!t.recurring; });
+  return tasks;
+}
+
 function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (saved && Array.isArray(saved.tasks) && saved.days) return saved;
+    if (saved && Array.isArray(saved.tasks) && saved.days) {
+      saved.tasks = normaliseTasks(saved.tasks);
+      return saved;
+    }
   } catch(e) {}
   return {tasks:[],days:{},sound:true,lastDate:null,theme:"light"};
 }
@@ -99,6 +108,18 @@ function save() {
   localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
 }
 
+// A recurring task stays on the daily list forever. A one-off task leaves the
+// list the day after it was completed – history keeps its points either way.
+function taskActiveOn(task, dateKey) {
+  if (task.recurring) return true;
+  for (const key of Object.keys(state.days)) {
+    if (key >= dateKey) continue;
+    const record = state.days[key] && state.days[key][task.id];
+    if (record && record.done) return false;
+  }
+  return true;
+}
+
 function ensureToday() {
   const today = localDate();
   if (today !== currentDate) currentDate = today;
@@ -106,6 +127,7 @@ function ensureToday() {
   if (!state.days[today]) state.days[today] = {};
 
   state.tasks.forEach(task => {
+    if (!taskActiveOn(task, today)) return;
     if (!state.days[today][task.id]) {
       state.days[today][task.id] = {
         value:minPoints(task),
@@ -208,19 +230,26 @@ function renderTasks() {
   const list=$("task-list");
   list.replaceChildren();
 
-  if(!state.tasks.length) {
+  const visibleTasks = state.tasks.filter(task => taskActiveOn(task, currentDate));
+
+  if(!visibleTasks.length) {
     const empty=document.createElement("div");
     empty.className="empty";
     const title=document.createElement("strong");
-    title.textContent="Ingen opgaver endnu";
     const text=document.createElement("p");
-    text.textContent="Tryk på + knappen øverst for at oprette din første opgave.";
+    if(!state.tasks.length) {
+      title.textContent="Ingen opgaver endnu";
+      text.textContent="Tryk på + knappen øverst for at oprette din første opgave.";
+    } else {
+      title.textContent="Alt er gennemført";
+      text.textContent="Alle dine opgaver er gennemført. Godt gået!";
+    }
     empty.append(title,text);
     list.append(empty);
     return;
   }
 
-  state.tasks.forEach(task=>{
+  visibleTasks.forEach(task=>{
     const record=entry(task);
     const percent=clamp(
       ((record.value-minPoints(task))/(task.max-minPoints(task)))*100,0,100
@@ -235,6 +264,18 @@ function renderTasks() {
     const title=document.createElement("div");
     title.className="task-title";
     title.textContent=task.title;
+
+    const headLeft=document.createElement("div");
+    headLeft.className="task-title-wrap";
+    headLeft.append(title);
+    if(task.recurring) {
+      const badge=document.createElement("span");
+      badge.className="recurring-badge";
+      badge.textContent="↻";
+      badge.title="Gentag hver dag";
+      badge.setAttribute("aria-label","Gentag hver dag");
+      headLeft.append(badge);
+    }
 
     const right=document.createElement("div");
     right.className="task-right";
@@ -261,7 +302,7 @@ function renderTasks() {
     });
 
     right.append(value,done);
-    head.append(title,right);
+    head.append(headLeft,right);
 
     const area=document.createElement("div");
     area.className="slider-area";
@@ -296,6 +337,10 @@ function renderTasks() {
 
     const actions=document.createElement("div");
     actions.className="task-actions";
+    const edit=document.createElement("button");
+    edit.className="edit-button";
+    edit.textContent="Rediger";
+    edit.addEventListener("click",()=>openModal("edit",task));
     const del=document.createElement("button");
     del.className="delete-button";
     del.textContent="Slet opgave";
@@ -307,7 +352,7 @@ function renderTasks() {
       save();
       renderTasks();
     });
-    actions.append(del);
+    actions.append(edit,del);
 
     card.append(head,area,actions);
     list.append(card);
@@ -581,18 +626,25 @@ document.querySelectorAll(".tab").forEach(tab=>{
 $("week-prev").addEventListener("click",()=>changeWeek(-1));
 $("week-next").addEventListener("click",()=>changeWeek(1));
 
-/* Modal system (reused for create + settings) */
+/* Modal system (reused for create, edit and settings) */
 let currentModal = null;
+let editingTask = null;
 let createMax = 1000;
 let submitting = false;
 
-function openModal(type) {
+const MODAL_TITLES = {
+  create: "Opret ny opgave",
+  edit: "Rediger opgave",
+  settings: "Indstillinger"
+};
+
+function openModal(type, task = null) {
   currentModal = type;
-  const title = type === "create" ? "Opret ny opgave" : "Indstillinger";
-  $("modal-title").textContent = title;
+  editingTask = (type === "edit") ? task : null;
+  $("modal-title").textContent = MODAL_TITLES[type] || "";
   const body = $("modal-body");
   body.replaceChildren();
-  if (type === "create") renderCreateForm(body);
+  if (type === "create" || type === "edit") renderTaskForm(body, task);
   else renderSettingsForm(body);
   $("overlay").classList.remove("hidden");
   // focus first input if any
@@ -604,6 +656,7 @@ function closeModal() {
   $("overlay").classList.add("hidden");
   $("modal-body").replaceChildren();
   currentModal = null;
+  editingTask = null;
 }
 
 $("add-button").addEventListener("click", () => openModal("create"));
@@ -614,14 +667,14 @@ $("overlay").addEventListener("click", e => {
 });
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") closeModal();
-  if (e.key === "Enter" && currentModal === "create") {
+  if (e.key === "Enter" && (currentModal === "create" || currentModal === "edit")) {
     e.preventDefault();
     submitTask();
   }
 });
 
-/* Create task form */
-function renderCreateForm(body) {
+/* Shared task form – used for both create and edit */
+function renderTaskForm(body, task = null) {
   const nameField = document.createElement("div");
   nameField.className = "field";
   const nameLabel = document.createElement("label");
@@ -631,7 +684,11 @@ function renderCreateForm(body) {
   nameInput.maxLength = 60;
   nameInput.placeholder = "F.eks. Gåtur, Ryd op...";
   nameInput.required = true;
+  nameInput.value = task ? task.title : "";
   nameField.append(nameLabel, nameInput);
+
+  const MIN = 1000;
+  const MAX = 1000000;
 
   const maxField = document.createElement("div");
   maxField.className = "field";
@@ -663,6 +720,22 @@ function renderCreateForm(body) {
   hint.textContent = "Træk skyderen for at vælge maksimal point.";
   maxField.append(maxLabel, sliderArea, valueDisplay, hint);
 
+  const recurringField = document.createElement("div");
+  recurringField.className = "field checkbox-field";
+  const recurringLabel = document.createElement("label");
+  recurringLabel.className = "checkbox-label";
+  const recurringInput = document.createElement("input");
+  recurringInput.type = "checkbox";
+  recurringInput.id = "task-recurring";
+  recurringInput.checked = !!(task && task.recurring);
+  const recurringText = document.createElement("span");
+  recurringText.textContent = "Gentag hver dag";
+  recurringLabel.append(recurringInput, recurringText);
+  const recurringHint = document.createElement("div");
+  recurringHint.className = "hint";
+  recurringHint.textContent = "Opgaven dukker op igen dagen efter, du har gennemført den.";
+  recurringField.append(recurringLabel, recurringHint);
+
   const error = document.createElement("div");
   error.className = "error";
   error.id = "form-error";
@@ -670,17 +743,15 @@ function renderCreateForm(body) {
   const saveBtn = document.createElement("button");
   saveBtn.className = "save-button";
   saveBtn.type = "button";
-  saveBtn.textContent = "Gem opgave";
+  saveBtn.textContent = task ? "Gem ændringer" : "Gem opgave";
   saveBtn.addEventListener("click", submitTask);
 
-  body.append(nameField, maxField, error, saveBtn);
+  body.append(nameField, maxField, recurringField, error, saveBtn);
 
-  // wire slider: range 1000..1000000
-  const MIN = 1000;
-  const MAX = 1000000;
-  createMax = MIN;
+  // Seed the slider from the task when editing, otherwise start at the minimum.
+  createMax = task ? clamp(task.max, MIN, MAX) : MIN;
   const record = { value: createMax, done: false };
-  const task = { min: MIN, max: MAX };
+  const sliderTask = { min: MIN, max: MAX };
   const percent = ((createMax - MIN) / (MAX - MIN)) * 100;
   fill.style.width = percent + "%";
   thumb.style.left = percent + "%";
@@ -691,7 +762,7 @@ function renderCreateForm(body) {
   slider.setAttribute("aria-valuemax", MAX);
   slider.setAttribute("aria-valuenow", createMax);
 
-  attachCreateSlider(slider, task, record, fill, thumb, tooltip, valueDisplay);
+  attachCreateSlider(slider, sliderTask, record, fill, thumb, tooltip, valueDisplay);
 }
 
 function submitTask() {
@@ -699,6 +770,7 @@ function submitTask() {
   submitting = true;
   try {
     const title = $("task-name").value.trim();
+    const recurring = $("task-recurring").checked;
     const max = createMax;
     if (!title) {
       $("form-error").textContent = "Skriv et navn til opgaven.";
@@ -708,11 +780,30 @@ function submitTask() {
       $("form-error").textContent = "Maksimale point skal være mindst 1.000.";
       return;
     }
-    const id = (crypto.randomUUID && typeof crypto.randomUUID === "function")
-      ? crypto.randomUUID()
-      : (Date.now().toString(36) + Math.random().toString(36).slice(2));
-    const task = { id, title, max };
-    state.tasks.push(task);
+
+    let task;
+    if (editingTask) {
+      // Edit in place so history records keep pointing at the same task id.
+      task = state.tasks.find(t => t.id === editingTask.id);
+      if (!task) {
+        $("form-error").textContent = "Opgaven kunne ikke findes.";
+        return;
+      }
+      task.title = title;
+      task.max = max;
+      task.recurring = recurring;
+      // Keep old daily values within the new range.
+      Object.values(state.days).forEach(day => {
+        const record = day[task.id];
+        if (record) record.value = clamp(record.value, minPoints(task), task.max);
+      });
+    } else {
+      const id = (crypto.randomUUID && typeof crypto.randomUUID === "function")
+        ? crypto.randomUUID()
+        : (Date.now().toString(36) + Math.random().toString(36).slice(2));
+      task = { id, title, max, recurring };
+      state.tasks.push(task);
+    }
     ensureToday();
     entry(task);
     save();
@@ -811,6 +902,7 @@ function importData(file) {
         return;
       }
       state = parsed;
+      state.tasks = normaliseTasks(state.tasks);
       if (!state.theme) state.theme = "light";
       if (state.sound === undefined) state.sound = true;
       save();
