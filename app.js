@@ -58,9 +58,17 @@ function clamp(value,min,max) {
   return Math.max(min,Math.min(max,value));
 }
 
-// Normalise on load so old backups (without `recurring`) keep working.
+const MAX_REPEAT_DAYS = 30;
+
+// Normalise on load so old backups keep working. The old boolean `recurring`
+// becomes repeatDays: 1 = "gentag hver dag", 0 = "gentager ikke".
 function normaliseTasks(tasks) {
-  tasks.forEach(t => { t.recurring = !!t.recurring; });
+  tasks.forEach(t => {
+    let days = t.repeatDays;
+    if (typeof days !== "number" || !Number.isFinite(days)) days = t.recurring ? 1 : 0;
+    t.repeatDays = clamp(Math.round(days), 0, MAX_REPEAT_DAYS);
+    delete t.recurring;
+  });
   return tasks;
 }
 
@@ -69,14 +77,17 @@ function load() {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (saved && Array.isArray(saved.tasks) && saved.days) {
       saved.tasks = normaliseTasks(saved.tasks);
+      saved.simpleMode = !!saved.simpleMode;
       return saved;
     }
   } catch(e) {}
-  return {tasks:[],days:{},sound:true,lastDate:null,theme:"light"};
+  return {tasks:[],days:{},sound:true,lastDate:null,theme:"light",simpleMode:false};
 }
 
 let state = load();
 if(!state.theme) state.theme="light";
+// View-only toggle for the "Vis gennemførte" button – not persisted.
+let showCompleted = false;
 let currentDate = localDate();
 let selectedWeek = weekKey(new Date());
 let soundContext = null;
@@ -108,16 +119,39 @@ function save() {
   localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
 }
 
-// A recurring task stays on the daily list forever. A one-off task leaves the
-// list the day after it was completed – history keeps its points either way.
-function taskActiveOn(task, dateKey) {
-  if (task.recurring) return true;
+function dateKeyAfter(key, days) {
+  return localDate(addDays(dateFromKey(key), days));
+}
+
+// Most recent completion on or before a day (ISO keys sort chronologically).
+function lastCompletionOnOrBefore(task, dateKey) {
+  let last = null;
   for (const key of Object.keys(state.days)) {
-    if (key >= dateKey) continue;
+    if (key > dateKey) continue;
     const record = state.days[key] && state.days[key][task.id];
-    if (record && record.done) return false;
+    if (record && record.done && (!last || key > last)) last = key;
   }
-  return true;
+  return last;
+}
+
+// repeatDays = 0: one-off – disappears for good after completion.
+// repeatDays = n>0: hidden after completion, active again n days later.
+function taskActiveOn(task, dateKey) {
+  const last = lastCompletionOnOrBefore(task, dateKey);
+  if (!last) return true;
+  const interval = task.repeatDays || 0;
+  if (interval === 0) return false;
+  return dateKey >= dateKeyAfter(last, interval);
+}
+
+function isCompletedOn(task, dateKey) {
+  const record = state.days[dateKey] && state.days[dateKey][task.id];
+  return !!(record && record.done);
+}
+
+// In simple mode a task always awards its full amount, so fresh records start there.
+function freshValue(task) {
+  return state.simpleMode ? task.max : minPoints(task);
 }
 
 function ensureToday() {
@@ -130,7 +164,7 @@ function ensureToday() {
     if (!taskActiveOn(task, today)) return;
     if (!state.days[today][task.id]) {
       state.days[today][task.id] = {
-        value:minPoints(task),
+        value: freshValue(task),
         done:false
       };
     }
@@ -142,7 +176,7 @@ function entry(task,date=currentDate) {
   if (!state.days[date]) state.days[date] = {};
   if (!state.days[date][task.id]) {
     state.days[date][task.id] = {
-      value:minPoints(task),
+      value: freshValue(task),
       done:false
     };
   }
@@ -223,144 +257,188 @@ function renderHeader() {
   // footer date removed per request
 }
 
+/* Today's task list */
+function repeatLabel(days) {
+  if (!days) return "";
+  return days === 1 ? "↻" : "↻ " + days;
+}
+
+function repeatTitle(days) {
+  if (!days) return "";
+  return days === 1 ? "Gentag hver dag" : "Gentag hver " + days + ". dag";
+}
+
+function buildCardHead(task, right) {
+  const head = document.createElement("div");
+  head.className = "card-head";
+
+  const left = document.createElement("div");
+  left.className = "task-title-wrap";
+  const title = document.createElement("div");
+  title.className = "task-title";
+  title.textContent = task.title;
+  left.append(title);
+
+  const days = task.repeatDays || 0;
+  if (days) {
+    const badge = document.createElement("span");
+    badge.className = "recurring-badge";
+    badge.textContent = repeatLabel(days);
+    const label = repeatTitle(days);
+    badge.title = label;
+    badge.setAttribute("aria-label", label);
+    left.append(badge);
+  }
+
+  head.append(left, right);
+  return head;
+}
+
+function buildCardActions(task) {
+  const actions = document.createElement("div");
+  actions.className = "task-actions";
+
+  const edit = document.createElement("button");
+  edit.className = "edit-button";
+  edit.type = "button";
+  edit.textContent = "Rediger";
+  edit.addEventListener("click", () => openModal("edit", task));
+
+  const del = document.createElement("button");
+  del.className = "delete-button";
+  del.type = "button";
+  del.textContent = "Slet opgave";
+  del.style.display = isInTouchMode ? "none" : "block";
+  del.addEventListener("click", () => {
+    if (!confirm('Slet "' + task.title + '"? Opgaven kommer ikke med på fremtidige dage.')) return;
+    state.tasks = state.tasks.filter(t => t.id !== task.id);
+    // Historical daily records are deliberately preserved.
+    save();
+    renderTasks();
+  });
+
+  actions.append(edit, del);
+  return actions;
+}
+
+function toggleDone(task, record, source) {
+  if (record.done) {
+    record.done = false;
+  } else {
+    record.done = true;
+    // Simple mode always awards the full amount; standard mode keeps a manual value.
+    if (state.simpleMode || record.value === 0) record.value = task.max;
+    animateCoins(source);
+  }
+  save();
+  renderTasks();
+}
+
+function buildCardRight(task, record) {
+  const right = document.createElement("div");
+  right.className = "task-right";
+  const value = document.createElement("span");
+  value.className = "task-value num";
+  value.textContent = format(state.simpleMode ? task.max : record.value);
+  const done = document.createElement("button");
+  done.className = "done-button";
+  done.type = "button";
+  done.setAttribute("aria-label", record.done ? "Fortryd gennemførelse" : "Markér som gennemført");
+  done.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.5 5 5L19.5 6"/></svg>';
+  done.addEventListener("click", () => toggleDone(task, record, done));
+  right.append(value, done);
+  return right;
+}
+
+function buildTaskCard(task) {
+  const record = entry(task);
+  const card = document.createElement("article");
+  card.className = "task" + (record.done ? " completed" : "") + (state.simpleMode ? " simple" : "");
+
+  card.append(buildCardHead(task, buildCardRight(task, record)));
+
+  let slider = null, fill = null, thumb = null, tooltip = null;
+  if (!state.simpleMode) {
+    const percent = clamp(
+      ((record.value - minPoints(task)) / (task.max - minPoints(task))) * 100, 0, 100
+    );
+    const area = document.createElement("div");
+    area.className = "slider-area";
+    slider = document.createElement("div");
+    slider.className = "slider" + (record.done ? " locked" : "");
+    slider.setAttribute("role", "slider");
+    slider.setAttribute("tabindex", record.done ? "-1" : "0");
+    slider.setAttribute("aria-label", "Potentielle point for " + task.title);
+    slider.setAttribute("aria-valuemin", minPoints(task));
+    slider.setAttribute("aria-valuemax", task.max);
+    slider.setAttribute("aria-valuenow", record.value);
+    const track = document.createElement("div");
+    track.className = "track";
+    fill = document.createElement("div");
+    fill.className = "fill";
+    fill.style.width = percent + "%";
+    track.append(fill);
+    thumb = document.createElement("div");
+    thumb.className = "thumb";
+    thumb.style.left = percent + "%";
+    tooltip = document.createElement("div");
+    tooltip.className = "tooltip num";
+    tooltip.textContent = format(record.value);
+    tooltip.style.left = percent + "%";
+    slider.append(track, thumb, tooltip);
+    area.append(slider);
+    card.append(area);
+  }
+
+  card.append(buildCardActions(task));
+  if (isInTouchMode) attachSwipeDelete(card, task);
+  if (slider && !record.done) {
+    attachSlider(slider, task, record, fill, thumb, tooltip, card.querySelector(".task-value"));
+  }
+  return card;
+}
+
 function renderTasks() {
   ensureToday();
   renderHeader();
 
-  const list=$("task-list");
+  const list = $("task-list");
   list.replaceChildren();
 
-  const visibleTasks = state.tasks.filter(task => taskActiveOn(task, currentDate));
+  $("completed-toggle").textContent = showCompleted ? "Skjul gennemførte" : "Vis gennemførte";
+  $("completed-toggle").setAttribute("aria-pressed", String(showCompleted));
 
-  if(!visibleTasks.length) {
-    const empty=document.createElement("div");
-    empty.className="empty";
-    const title=document.createElement("strong");
-    const text=document.createElement("p");
-    if(!state.tasks.length) {
-      title.textContent="Ingen opgaver endnu";
-      text.textContent="Tryk på + knappen øverst for at oprette din første opgave.";
+  const active = state.tasks.filter(task => taskActiveOn(task, currentDate));
+  const completed = showCompleted
+    ? state.tasks.filter(task => isCompletedOn(task, currentDate))
+    : [];
+
+  if (!active.length && !completed.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    const title = document.createElement("strong");
+    const text = document.createElement("p");
+    if (!state.tasks.length) {
+      title.textContent = "Ingen opgaver endnu";
+      text.textContent = "Tryk på + knappen øverst for at oprette din første opgave.";
     } else {
-      title.textContent="Alt er gennemført";
-      text.textContent="Alle dine opgaver er gennemført. Godt gået!";
+      title.textContent = "Alt er gennemført";
+      text.textContent = "Alle dine opgaver er gennemført. Godt gået!";
     }
-    empty.append(title,text);
+    empty.append(title, text);
     list.append(empty);
     return;
   }
 
-  visibleTasks.forEach(task=>{
-    const record=entry(task);
-    const percent=clamp(
-      ((record.value-minPoints(task))/(task.max-minPoints(task)))*100,0,100
-    );
+  active.forEach(task => list.append(buildTaskCard(task)));
 
-    const card=document.createElement("article");
-    card.className="task"+(record.done?" completed":"");
-
-    const head=document.createElement("div");
-    head.className="card-head";
-
-    const title=document.createElement("div");
-    title.className="task-title";
-    title.textContent=task.title;
-
-    const headLeft=document.createElement("div");
-    headLeft.className="task-title-wrap";
-    headLeft.append(title);
-    if(task.recurring) {
-      const badge=document.createElement("span");
-      badge.className="recurring-badge";
-      badge.textContent="↻";
-      badge.title="Gentag hver dag";
-      badge.setAttribute("aria-label","Gentag hver dag");
-      headLeft.append(badge);
-    }
-
-    const right=document.createElement("div");
-    right.className="task-right";
-
-    const value=document.createElement("span");
-    value.className="task-value num";
-    value.textContent=format(record.value);
-
-    const done=document.createElement("button");
-    done.className="done-button";
-    done.type="button";
-    done.setAttribute("aria-label",record.done?"Fortryd gennemførelse":"Markér som gennemført");
-    done.innerHTML='<svg fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.5 5 5L19.5 6"/></svg>';
-    done.addEventListener("click",()=>{
-      if(record.done) {
-        record.done=false;
-      } else {
-        record.done=true;
-        if(record.value === 0) record.value = task.max;
-        animateCoins(done);
-      }
-      save();
-      renderTasks();
-    });
-
-    right.append(value,done);
-    head.append(headLeft,right);
-
-    const area=document.createElement("div");
-    area.className="slider-area";
-
-    const slider=document.createElement("div");
-    slider.className="slider"+(record.done?" locked":"");
-    slider.setAttribute("role","slider");
-    slider.setAttribute("tabindex",record.done?"-1":"0");
-    slider.setAttribute("aria-label","Potentielle point for "+task.title);
-    slider.setAttribute("aria-valuemin",minPoints(task));
-    slider.setAttribute("aria-valuemax",task.max);
-    slider.setAttribute("aria-valuenow",record.value);
-
-    const track=document.createElement("div");
-    track.className="track";
-    const fill=document.createElement("div");
-    fill.className="fill";
-    fill.style.width=percent+"%";
-    track.append(fill);
-
-    const thumb=document.createElement("div");
-    thumb.className="thumb";
-    thumb.style.left=percent+"%";
-
-    const tooltip=document.createElement("div");
-    tooltip.className="tooltip num";
-    tooltip.textContent=format(record.value);
-    tooltip.style.left=percent+"%";
-
-    slider.append(track,thumb,tooltip);
-    area.append(slider);
-
-    const actions=document.createElement("div");
-    actions.className="task-actions";
-    const edit=document.createElement("button");
-    edit.className="edit-button";
-    edit.textContent="Rediger";
-    edit.addEventListener("click",()=>openModal("edit",task));
-    const del=document.createElement("button");
-    del.className="delete-button";
-    del.textContent="Slet opgave";
-    del.style.display = isInTouchMode ? "none" : "block";
-    del.addEventListener("click",()=>{
-      if(!confirm(`Slet "${task.title}"? Opgaven kommer ikke med på fremtidige dage.`)) return;
-      state.tasks=state.tasks.filter(t=>t.id!==task.id);
-      // Historical daily records are deliberately preserved.
-      save();
-      renderTasks();
-    });
-    actions.append(edit,del);
-
-    card.append(head,area,actions);
-    list.append(card);
-
-    if(isInTouchMode) attachSwipeDelete(card,task);
-
-    if(!record.done) attachSlider(slider,task,record,fill,thumb,tooltip,value);
-  });
+  if (completed.length) {
+    const heading = document.createElement("div");
+    heading.className = "completed-heading";
+    heading.textContent = "Gennemført i dag";
+    list.append(heading);
+    completed.forEach(task => list.append(buildTaskCard(task)));
+  }
 }
 
 function attachSlider(slider,task,record,fill,thumb,tooltip,valueEl) {
@@ -625,11 +703,16 @@ document.querySelectorAll(".tab").forEach(tab=>{
 });
 $("week-prev").addEventListener("click",()=>changeWeek(-1));
 $("week-next").addEventListener("click",()=>changeWeek(1));
+$("completed-toggle").addEventListener("click",()=>{
+  showCompleted=!showCompleted;
+  renderTasks();
+});
 
 /* Modal system (reused for create, edit and settings) */
 let currentModal = null;
 let editingTask = null;
 let createMax = 1000;
+let createRepeatDays = 0;
 let submitting = false;
 
 const MODAL_TITLES = {
@@ -674,7 +757,17 @@ document.addEventListener("keydown", e => {
 });
 
 /* Shared task form – used for both create and edit */
+function repeatValueLabel(days) {
+  if (!days) return "Gentager ikke";
+  return days === 1 ? "Hver dag" : "Hver " + days + ". dag";
+}
+
+/* Shared task form – used for both create and edit */
 function renderTaskForm(body, task = null) {
+  const simple = state.simpleMode;
+  const MIN = 1000;
+  const MAX = 1000000;
+
   const nameField = document.createElement("div");
   nameField.className = "field";
   const nameLabel = document.createElement("label");
@@ -687,54 +780,45 @@ function renderTaskForm(body, task = null) {
   nameInput.value = task ? task.title : "";
   nameField.append(nameLabel, nameInput);
 
-  const MIN = 1000;
-  const MAX = 1000000;
+  // One reusable slider control, used for both the points and the repeat interval.
+  createMax = task ? clamp(task.max, MIN, MAX) : MIN;
+  const pointsControl = makeRangeControl({
+    min: MIN,
+    max: MAX,
+    value: createMax,
+    ariaLabel: simple ? "Point for opgaven" : "Maksimale point",
+    formatTooltip: v => format(v),
+    onChange: v => { createMax = v; }
+  });
+  const pointsField = document.createElement("div");
+  pointsField.className = "field";
+  const pointsLabel = document.createElement("label");
+  pointsLabel.textContent = simple ? "Point" : "Maksimale point";
+  const pointsHint = document.createElement("div");
+  pointsHint.className = "hint";
+  pointsHint.textContent = simple
+    ? "Opgaven giver altid dette beløb, når du sætter kryds."
+    : "Træk skyderen for at vælge maksimal point.";
+  pointsField.append(pointsLabel, pointsControl.area, pointsControl.valueDisplay, pointsHint);
 
-  const maxField = document.createElement("div");
-  maxField.className = "field";
-  const maxLabel = document.createElement("label");
-  maxLabel.textContent = "Maksimale point";
-  const sliderArea = document.createElement("div");
-  sliderArea.className = "slider-area";
-  const slider = document.createElement("div");
-  slider.className = "slider create-slider";
-  slider.setAttribute("role", "slider");
-  slider.setAttribute("tabindex", "0");
-  slider.setAttribute("aria-label", "Maksimale point");
-  const track = document.createElement("div");
-  track.className = "track";
-  const fill = document.createElement("div");
-  fill.className = "fill";
-  track.append(fill);
-  const thumb = document.createElement("div");
-  thumb.className = "thumb";
-  const tooltip = document.createElement("div");
-  tooltip.className = "tooltip num";
-  slider.append(track, thumb, tooltip);
-  sliderArea.append(slider);
-  const valueDisplay = document.createElement("div");
-  valueDisplay.className = "range-value";
-  valueDisplay.id = "slider-value";
-  const hint = document.createElement("div");
-  hint.className = "hint";
-  hint.textContent = "Træk skyderen for at vælge maksimal point.";
-  maxField.append(maxLabel, sliderArea, valueDisplay, hint);
-
-  const recurringField = document.createElement("div");
-  recurringField.className = "field checkbox-field";
-  const recurringLabel = document.createElement("label");
-  recurringLabel.className = "checkbox-label";
-  const recurringInput = document.createElement("input");
-  recurringInput.type = "checkbox";
-  recurringInput.id = "task-recurring";
-  recurringInput.checked = !!(task && task.recurring);
-  const recurringText = document.createElement("span");
-  recurringText.textContent = "Gentag hver dag";
-  recurringLabel.append(recurringInput, recurringText);
-  const recurringHint = document.createElement("div");
-  recurringHint.className = "hint";
-  recurringHint.textContent = "Opgaven dukker op igen dagen efter, du har gennemført den.";
-  recurringField.append(recurringLabel, recurringHint);
+  createRepeatDays = task ? (task.repeatDays || 0) : 0;
+  const repeatControl = makeRangeControl({
+    min: 0,
+    max: MAX_REPEAT_DAYS,
+    value: createRepeatDays,
+    ariaLabel: "Gentagelse",
+    formatTooltip: v => String(v),
+    formatValue: repeatValueLabel,
+    onChange: v => { createRepeatDays = v; }
+  });
+  const repeatField = document.createElement("div");
+  repeatField.className = "field";
+  const repeatLabel = document.createElement("label");
+  repeatLabel.textContent = "Gentagelse";
+  const repeatHint = document.createElement("div");
+  repeatHint.className = "hint";
+  repeatHint.textContent = "0 gentager ikke. Vælg antal dage for at få opgaven tilbage efter gennemførelse.";
+  repeatField.append(repeatLabel, repeatControl.area, repeatControl.valueDisplay, repeatHint);
 
   const error = document.createElement("div");
   error.className = "error";
@@ -746,23 +830,7 @@ function renderTaskForm(body, task = null) {
   saveBtn.textContent = task ? "Gem ændringer" : "Gem opgave";
   saveBtn.addEventListener("click", submitTask);
 
-  body.append(nameField, maxField, recurringField, error, saveBtn);
-
-  // Seed the slider from the task when editing, otherwise start at the minimum.
-  createMax = task ? clamp(task.max, MIN, MAX) : MIN;
-  const record = { value: createMax, done: false };
-  const sliderTask = { min: MIN, max: MAX };
-  const percent = ((createMax - MIN) / (MAX - MIN)) * 100;
-  fill.style.width = percent + "%";
-  thumb.style.left = percent + "%";
-  tooltip.style.left = percent + "%";
-  tooltip.textContent = format(createMax);
-  valueDisplay.textContent = format(createMax);
-  slider.setAttribute("aria-valuemin", MIN);
-  slider.setAttribute("aria-valuemax", MAX);
-  slider.setAttribute("aria-valuenow", createMax);
-
-  attachCreateSlider(slider, sliderTask, record, fill, thumb, tooltip, valueDisplay);
+  body.append(nameField, pointsField, repeatField, error, saveBtn);
 }
 
 function submitTask() {
@@ -770,14 +838,14 @@ function submitTask() {
   submitting = true;
   try {
     const title = $("task-name").value.trim();
-    const recurring = $("task-recurring").checked;
     const max = createMax;
+    const repeatDays = clamp(Math.round(createRepeatDays), 0, MAX_REPEAT_DAYS);
     if (!title) {
       $("form-error").textContent = "Skriv et navn til opgaven.";
       return;
     }
     if (!Number.isSafeInteger(max) || max < 1000) {
-      $("form-error").textContent = "Maksimale point skal være mindst 1.000.";
+      $("form-error").textContent = "Point skal være mindst 1.000.";
       return;
     }
 
@@ -791,7 +859,7 @@ function submitTask() {
       }
       task.title = title;
       task.max = max;
-      task.recurring = recurring;
+      task.repeatDays = repeatDays;
       // Keep old daily values within the new range.
       Object.values(state.days).forEach(day => {
         const record = day[task.id];
@@ -801,7 +869,7 @@ function submitTask() {
       const id = (crypto.randomUUID && typeof crypto.randomUUID === "function")
         ? crypto.randomUUID()
         : (Date.now().toString(36) + Math.random().toString(36).slice(2));
-      task = { id, title, max, recurring };
+      task = { id, title, max, repeatDays };
       state.tasks.push(task);
     }
     ensureToday();
@@ -816,70 +884,85 @@ function submitTask() {
   }
 }
 
-function attachCreateSlider(slider, task, record, fill, thumb, tooltip, valueEl) {
-  let dragging = false;
-  let lastTick = record.value;
-  const MIN = task.min;
-  const MAX = task.max;
+/* Generic slider control reused by the task form (points + repeat interval). */
+function makeRangeControl({ min, max, value, ariaLabel, formatTooltip, formatValue, onChange }) {
+  const label = formatValue || formatTooltip || (v => String(v));
+  const area = document.createElement("div");
+  area.className = "slider-area";
+  const slider = document.createElement("div");
+  slider.className = "slider create-slider";
+  slider.setAttribute("role", "slider");
+  slider.setAttribute("tabindex", "0");
+  slider.setAttribute("aria-label", ariaLabel);
+  slider.setAttribute("aria-valuemin", String(min));
+  slider.setAttribute("aria-valuemax", String(max));
+  const track = document.createElement("div");
+  track.className = "track";
+  const fill = document.createElement("div");
+  fill.className = "fill";
+  track.append(fill);
+  const thumb = document.createElement("div");
+  thumb.className = "thumb";
+  const tooltip = document.createElement("div");
+  tooltip.className = "tooltip num";
+  slider.append(track, thumb, tooltip);
+  area.append(slider);
+  const valueDisplay = document.createElement("div");
+  valueDisplay.className = "range-value";
 
-  function update(clientX) {
-    const rect = slider.getBoundingClientRect();
-    const ratio = clamp((clientX - rect.left) / rect.width, 0, 1);
-    const next = Math.round(MIN + (MAX - MIN) * ratio);
-    const percent = ratio * 100;
-    record.value = next;
-    createMax = next;
+  let current = clamp(value, min, max);
+  function paint() {
+    const percent = ((current - min) / (max - min)) * 100;
     fill.style.width = percent + "%";
     thumb.style.left = percent + "%";
     tooltip.style.left = percent + "%";
-    tooltip.textContent = format(next);
-    valueEl.textContent = format(next);
-    slider.setAttribute("aria-valuenow", next);
-    if (Math.abs(next - lastTick) >= Math.max(1, (MAX - MIN) / 30)) {
-      playTone(480, .025);
-      lastTick = next;
-    }
-    renderHeader();
+    tooltip.textContent = formatTooltip(current);
+    valueDisplay.textContent = label(current);
+    slider.setAttribute("aria-valuenow", String(current));
   }
-
+  function setFromClientX(clientX) {
+    const rect = slider.getBoundingClientRect();
+    const ratio = clamp((clientX - rect.left) / rect.width, 0, 1);
+    const next = Math.round(min + (max - min) * ratio);
+    if (next !== current) {
+      current = next;
+      onChange(current);
+      paint();
+    }
+  }
+  let dragging = false;
   slider.addEventListener("pointerdown", e => {
     dragging = true;
     slider.classList.add("dragging");
     slider.setPointerCapture(e.pointerId);
-    update(e.clientX);
+    setFromClientX(e.clientX);
   });
-  slider.addEventListener("pointermove", e => {
-    if (dragging) update(e.clientX);
-  });
+  slider.addEventListener("pointermove", e => { if (dragging) setFromClientX(e.clientX); });
   function endDrag() {
     if (!dragging) return;
     dragging = false;
     slider.classList.remove("dragging");
-    save();
   }
   slider.addEventListener("pointerup", endDrag);
   slider.addEventListener("pointercancel", endDrag);
   slider.addEventListener("lostpointercapture", endDrag);
   slider.addEventListener("keydown", e => {
-    let next = record.value;
-    const step = Math.max(1, Math.round((MAX - MIN) / 100));
+    const step = Math.max(1, Math.round((max - min) / 100));
+    let next = current;
     if (e.key === "ArrowRight" || e.key === "ArrowUp") next += step;
     else if (e.key === "ArrowLeft" || e.key === "ArrowDown") next -= step;
-    else if (e.key === "Home") next = MIN;
-    else if (e.key === "End") next = MAX;
+    else if (e.key === "Home") next = min;
+    else if (e.key === "End") next = max;
     else return;
     e.preventDefault();
-    next = clamp(next, MIN, MAX);
-    const rect = slider.getBoundingClientRect();
-    const ratio = (next - MIN) / (MAX - MIN);
-    record.value = next;
-    createMax = next;
-    update(rect.left + ratio * rect.width);
-    save();
+    current = clamp(next, min, max);
+    onChange(current);
+    paint();
   });
+  paint();
+  return { area, valueDisplay };
 }
 
-/* Settings form */
 function exportData() {
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -903,6 +986,7 @@ function importData(file) {
       }
       state = parsed;
       state.tasks = normaliseTasks(state.tasks);
+      state.simpleMode = !!state.simpleMode;
       if (!state.theme) state.theme = "light";
       if (state.sound === undefined) state.sound = true;
       save();
@@ -962,6 +1046,35 @@ function renderSettingsForm(body) {
   toggleRow.append(toggleLabel, toggle);
   soundField.append(soundLabel, toggleRow);
 
+  // Simple mode: one global setting that reinterprets "max point" as a fixed
+  // award and replaces the daily slider with a single checkmark.
+  const modeField = document.createElement("div");
+  modeField.className = "field";
+  const modeLabel = document.createElement("label");
+  modeLabel.textContent = "Visning";
+  const modeRow = document.createElement("div");
+  modeRow.className = "toggle-row";
+  const modeText = document.createElement("span");
+  modeText.className = "toggle-label";
+  const MODE_LABELS = {
+    standard: "Vurdering med skyder",
+    simple: "Kun kryds (fuldt beløb)"
+  };
+  modeText.textContent = state.simpleMode ? MODE_LABELS.simple : MODE_LABELS.standard;
+  const modeToggle = document.createElement("button");
+  modeToggle.type = "button";
+  modeToggle.className = "toggle" + (state.simpleMode ? " on" : "");
+  modeToggle.setAttribute("aria-label", "Skift visning");
+  modeToggle.addEventListener("click", () => {
+    state.simpleMode = !state.simpleMode;
+    save();
+    modeToggle.classList.toggle("on", state.simpleMode);
+    modeText.textContent = state.simpleMode ? MODE_LABELS.simple : MODE_LABELS.standard;
+    renderTasks();
+  });
+  modeRow.append(modeText, modeToggle);
+  modeField.append(modeLabel, modeRow);
+
   // Data backup
   const dataField = document.createElement("div");
   dataField.className = "field";
@@ -997,7 +1110,7 @@ function renderSettingsForm(body) {
   saveBtn.textContent = "Gem indstillinger";
   saveBtn.addEventListener("click", closeModal);
 
-  body.append(themeField, soundField, dataField, saveBtn);
+  body.append(themeField, soundField, modeField, dataField, saveBtn);
 }
 
 /* Sound toggle moved to settings modal */
