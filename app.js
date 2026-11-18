@@ -5,13 +5,6 @@ const STORAGE_KEY = "little_wins_v1";
 const DAY_NAMES = ["Man","Tir","Ons","Tor","Fre","Lør","Søn"];
 const $ = id => document.getElementById(id);
 
-const coinSVG = size => `
-<svg width="${size}" height="${size}" viewBox="0 0 36 36" fill="none">
-<circle cx="18" cy="18" r="16" fill="#FBBF24" stroke="#111" stroke-width="2.5"/>
-<ellipse cx="18" cy="18" rx="10" ry="12" fill="#F59E0B" stroke="#111" stroke-width="1.5"/>
-<rect x="15.5" y="10" width="5" height="16" rx="2.5" fill="#FEF08A"/>
-</svg>`;
-
 const format = n => Math.round(n).toLocaleString("da-DK");
 
 function localDate(date = new Date()) {
@@ -86,8 +79,10 @@ function load() {
 
 let state = load();
 if(!state.theme) state.theme="light";
-// View-only toggle for the "Vis gennemførte" button – not persisted.
-let showCompleted = false;
+// Set briefly after a completion so the card can pop once when it is re-rendered.
+let justCompletedId = null;
+// View-only: whether logged tasks from today are shown at the bottom of the list.
+let showLogged = false;
 let currentDate = localDate();
 let selectedWeek = weekKey(new Date());
 let soundContext = null;
@@ -134,19 +129,28 @@ function lastCompletionOnOrBefore(task, dateKey) {
   return last;
 }
 
-// repeatDays = 0: one-off – disappears for good after completion.
-// repeatDays = n>0: hidden after completion, active again n days later.
+// A task completed today stays on the list until the user logs it. Once logged
+// (or on a later day), repeatDays decides when it comes back: 0 = never.
 function taskActiveOn(task, dateKey) {
   const last = lastCompletionOnOrBefore(task, dateKey);
   if (!last) return true;
+  if (last === dateKey) {
+    const record = state.days[dateKey] && state.days[dateKey][task.id];
+    return !(record && record.archived);
+  }
   const interval = task.repeatDays || 0;
   if (interval === 0) return false;
   return dateKey >= dateKeyAfter(last, interval);
 }
 
-function isCompletedOn(task, dateKey) {
-  const record = state.days[dateKey] && state.days[dateKey][task.id];
+function isDoneToday(task) {
+  const record = state.days[currentDate] && state.days[currentDate][task.id];
   return !!(record && record.done);
+}
+
+function isLoggedToday(task) {
+  const record = state.days[currentDate] && state.days[currentDate][task.id];
+  return !!(record && record.done && record.archived);
 }
 
 // In simple mode a task always awards its full amount, so fresh records start there.
@@ -239,7 +243,7 @@ function animateCoins(card, points) {
     const size=16+Math.random()*10;
     coin.style.width=size+"px";
     coin.style.height=size+"px";
-    coin.innerHTML=coinSVG(Math.round(size));
+    coin.innerHTML='<img src="happy-coin.png" alt="">';
     const startX=from.left+from.width*(.06+Math.random()*.88);
     const startY=from.top+from.height*(.12+Math.random()*.76);
     coin.style.left=(startX-size/2)+"px";
@@ -273,7 +277,7 @@ function animateTotal(from,to) {
   const duration=700;
   const start=performance.now();
   const step=now=>{
-    const t=Math.min(1,(now-start)/duration);
+    const t=clamp((now-start)/duration,0,1);
     const eased=1-Math.pow(1-t,3);
     el.textContent=format(Math.round(from+(to-from)*eased));
     if(t<1) totalFrame=requestAnimationFrame(step);
@@ -363,10 +367,13 @@ function toggleDone(task, record, card) {
   const before=dayTotal();
   if (record.done) {
     record.done = false;
+    record.archived = false;
   } else {
     record.done = true;
+    record.archived = false;
     // Simple mode always awards the full amount; standard mode keeps a manual value.
     if (state.simpleMode || record.value === 0) record.value = task.max;
+    justCompletedId = task.id;
     animateCoins(card, record.value);
   }
   save();
@@ -392,7 +399,9 @@ function buildCardRight(task, record, card) {
 function buildTaskCard(task) {
   const record = entry(task);
   const card = document.createElement("article");
-  card.className = "task" + (record.done ? " completed" : "") + (state.simpleMode ? " simple" : "");
+  card.className = "task" + (record.done ? " completed" : "") +
+    (state.simpleMode ? " simple" : "") +
+    (task.id === justCompletedId ? " just-completed" : "");
 
   card.append(buildCardHead(task, buildCardRight(task, record, card)));
 
@@ -444,15 +453,25 @@ function renderTasks(animateFrom=null) {
   const list = $("task-list");
   list.replaceChildren();
 
-  $("completed-toggle").textContent = showCompleted ? "Skjul gennemførte" : "Vis gennemførte";
-  $("completed-toggle").setAttribute("aria-pressed", String(showCompleted));
+  const visible = state.tasks.filter(task => taskActiveOn(task, currentDate));
+  const open = visible.filter(task => !isDoneToday(task));
+  const done = visible.filter(task => isDoneToday(task));
+  const loggedCount = state.tasks.filter(isLoggedToday).length;
+  const logged = showLogged ? state.tasks.filter(isLoggedToday) : [];
 
-  const active = state.tasks.filter(task => taskActiveOn(task, currentDate));
-  const completed = showCompleted
-    ? state.tasks.filter(task => isCompletedOn(task, currentDate))
-    : [];
+  const logButton = $("log-completed");
+  logButton.hidden = done.length === 0;
+  logButton.textContent = done.length > 1
+    ? "Log " + done.length + " gennemførte"
+    : "Log gennemført";
 
-  if (!active.length && !completed.length) {
+  const loggedButton = $("show-logged");
+  loggedButton.hidden = loggedCount === 0;
+  loggedButton.textContent = showLogged
+    ? "Skjul loggede opgaver"
+    : "Vis loggede opgaver (" + loggedCount + ")";
+
+  if (!visible.length && !logged.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
     const title = document.createElement("strong");
@@ -469,14 +488,27 @@ function renderTasks(animateFrom=null) {
     return;
   }
 
-  active.forEach(task => list.append(buildTaskCard(task)));
+  open.forEach(task => list.append(buildTaskCard(task)));
 
-  if (completed.length) {
+  if (done.length) {
     const heading = document.createElement("div");
     heading.className = "completed-heading";
     heading.textContent = "Gennemført i dag";
     list.append(heading);
-    completed.forEach(task => list.append(buildTaskCard(task)));
+    done.forEach(task => list.append(buildTaskCard(task)));
+  }
+
+  if (logged.length) {
+    const heading = document.createElement("div");
+    heading.className = "completed-heading";
+    heading.textContent = "Loggedet i dag";
+    list.append(heading);
+    logged.forEach(task => list.append(buildTaskCard(task)));
+  }
+
+  if (justCompletedId !== null) {
+    const id = justCompletedId;
+    setTimeout(() => { if (justCompletedId === id) justCompletedId = null; }, 1200);
   }
 }
 
@@ -742,8 +774,20 @@ document.querySelectorAll(".tab").forEach(tab=>{
 });
 $("week-prev").addEventListener("click",()=>changeWeek(-1));
 $("week-next").addEventListener("click",()=>changeWeek(1));
-$("completed-toggle").addEventListener("click",()=>{
-  showCompleted=!showCompleted;
+// Logging is an explicit action: completed cards stay visible until this is tapped.
+$("log-completed").addEventListener("click",()=>{
+  const day=state.days[currentDate] || {};
+  state.tasks.forEach(task=>{
+    const record=day[task.id];
+    if(record && record.done) record.archived=true;
+  });
+  save();
+  renderTasks();
+});
+
+// Logged tasks stay out of the way until the user asks to see them again.
+$("show-logged").addEventListener("click",()=>{
+  showLogged=!showLogged;
   renderTasks();
 });
 

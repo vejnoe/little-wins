@@ -182,15 +182,27 @@ main {flex:1;padding:20px 24px 28px}
   margin:22px 0 10px;font-size:10px;font-weight:700;
   text-transform:uppercase;letter-spacing:.4px;color:#999;
 }
-.completed-toggle {
-  display:block;margin:18px auto 0;padding:8px 14px;
+.log-completed {
+  display:block;margin:18px auto 0;padding:9px 16px;
+  border:1px solid var(--ink);border-radius:9px;
+  background:var(--paper);color:var(--ink);
+  font:600 11px "Inter",sans-serif;cursor:pointer;
+  -webkit-appearance:none;appearance:none;
+}
+.log-completed[hidden] {display:none}
+.show-logged {
+  display:block;margin:10px auto 0;padding:8px 14px;
   border:1px solid var(--line);border-radius:9px;
   background:var(--paper);color:var(--muted);
   font:600 11px "Inter",sans-serif;cursor:pointer;
   -webkit-appearance:none;appearance:none;
 }
-.completed-toggle[aria-pressed="true"] {
-  border-color:var(--ink);color:var(--ink);
+.show-logged[hidden] {display:none}
+.just-completed {animation:complete-pop .55s ease}
+@keyframes complete-pop {
+  0% {transform:scale(1)}
+  35% {transform:scale(1.035)}
+  100% {transform:scale(1)}
 }
 footer {
   border-top:2px solid var(--line);
@@ -352,7 +364,7 @@ footer {
   position:fixed;z-index:50;width:20px;height:20px;
   pointer-events:none;
 }
-.coin-particle svg {width:100%;height:100%}
+.coin-particle img {width:100%;height:100%;display:block}
 @keyframes coin-arrive {
   0% {opacity:1;transform:translate(0,0) scale(.7) rotate(0)}
   65% {opacity:1;transform:translate(var(--dx),var(--dy)) scale(1.15) rotate(300deg)}
