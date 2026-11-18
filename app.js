@@ -212,12 +212,16 @@ function playTone(frequency=900,duration=.12) {
   } catch(e) {}
 }
 
-function animateCoins(source) {
+// More points means more coins – capped so large awards stay tasteful.
+function coinCount(points) {
+  const magnitude=Math.max(0,Math.log10(Math.max(1000,points)/1000));
+  return Math.round(clamp(10+magnitude*8,10,36));
+}
+
+function animateCoins(card, points) {
   const anchor=$("coin-anchor");
-  const from=source.getBoundingClientRect();
+  const from=card.getBoundingClientRect();
   const to=anchor.getBoundingClientRect();
-  const startX=from.left+from.width/2;
-  const startY=from.top+from.height/2;
   const endX=to.left+to.width/2;
   const endY=to.top+to.height/2;
 
@@ -227,33 +231,67 @@ function animateCoins(source) {
     return;
   }
 
-  for(let i=0;i<12;i++) {
+  // Scatter launch points across the whole task card, not a single button.
+  const count=coinCount(points);
+  for(let i=0;i<count;i++) {
     const coin=document.createElement("div");
     coin.className="coin-particle";
-    coin.innerHTML=coinSVG(20);
-    coin.style.left=(startX-10+(Math.random()-.5)*30)+"px";
-    coin.style.top=(startY-10+(Math.random()-.5)*20)+"px";
-    const dx=endX-startX+(Math.random()-.5)*45;
-    const dy=endY-startY+(Math.random()-.5)*35;
+    const size=16+Math.random()*10;
+    coin.style.width=size+"px";
+    coin.style.height=size+"px";
+    coin.innerHTML=coinSVG(Math.round(size));
+    const startX=from.left+from.width*(.06+Math.random()*.88);
+    const startY=from.top+from.height*(.12+Math.random()*.76);
+    coin.style.left=(startX-size/2)+"px";
+    coin.style.top=(startY-size/2)+"px";
+    const dx=endX-startX+(Math.random()-.5)*70;
+    const dy=endY-startY+(Math.random()-.5)*60;
     coin.style.setProperty("--dx",dx+"px");
     coin.style.setProperty("--dy",dy+"px");
-    coin.style.animation=`coin-arrive ${.55+Math.random()*.35}s cubic-bezier(.2,.8,.3,1) ${i*.035}s forwards`;
+    coin.style.animation=`coin-arrive ${.6+Math.random()*.45}s cubic-bezier(.2,.8,.3,1) ${Math.random()*.35}s forwards`;
     document.body.appendChild(coin);
-    setTimeout(()=>coin.remove(),1300);
+    setTimeout(()=>coin.remove(),1600);
   }
 
   setTimeout(()=>{
     anchor.classList.add("coin-bounce");
     setTimeout(()=>anchor.classList.remove("coin-bounce"),450);
     playTone(1318,.2);
-  },850);
+  },900);
 }
 
-function renderHeader() {
-  $("total-points").textContent=format(dayTotal());
+let totalFrame=null;
+
+// Count the header total up (or down) smoothly instead of jumping to the value.
+function animateTotal(from,to) {
+  const el=$("total-points");
+  if(totalFrame!==null) { cancelAnimationFrame(totalFrame); totalFrame=null; }
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches || from===to) {
+    el.textContent=format(to);
+    return;
+  }
+  const duration=700;
+  const start=performance.now();
+  const step=now=>{
+    const t=Math.min(1,(now-start)/duration);
+    const eased=1-Math.pow(1-t,3);
+    el.textContent=format(Math.round(from+(to-from)*eased));
+    if(t<1) totalFrame=requestAnimationFrame(step);
+    else { totalFrame=null; el.textContent=format(to); }
+  };
+  totalFrame=requestAnimationFrame(step);
+}
+
+function renderHeader(animateFrom=null) {
   $("today-label").textContent=new Intl.DateTimeFormat("da-DK",{
     weekday:"long",day:"numeric",month:"short"
   }).format(new Date());
+  const total=dayTotal();
+  if(animateFrom!==null && animateFrom!==total) animateTotal(animateFrom,total);
+  else {
+    if(totalFrame!==null) { cancelAnimationFrame(totalFrame); totalFrame=null; }
+    $("total-points").textContent=format(total);
+  }
   // footer date removed per request
 }
 
@@ -321,20 +359,21 @@ function buildCardActions(task) {
   return actions;
 }
 
-function toggleDone(task, record, source) {
+function toggleDone(task, record, card) {
+  const before=dayTotal();
   if (record.done) {
     record.done = false;
   } else {
     record.done = true;
     // Simple mode always awards the full amount; standard mode keeps a manual value.
     if (state.simpleMode || record.value === 0) record.value = task.max;
-    animateCoins(source);
+    animateCoins(card, record.value);
   }
   save();
-  renderTasks();
+  renderTasks(before);
 }
 
-function buildCardRight(task, record) {
+function buildCardRight(task, record, card) {
   const right = document.createElement("div");
   right.className = "task-right";
   const value = document.createElement("span");
@@ -345,7 +384,7 @@ function buildCardRight(task, record) {
   done.type = "button";
   done.setAttribute("aria-label", record.done ? "Fortryd gennemførelse" : "Markér som gennemført");
   done.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.5 5 5L19.5 6"/></svg>';
-  done.addEventListener("click", () => toggleDone(task, record, done));
+  done.addEventListener("click", () => toggleDone(task, record, card));
   right.append(value, done);
   return right;
 }
@@ -355,7 +394,7 @@ function buildTaskCard(task) {
   const card = document.createElement("article");
   card.className = "task" + (record.done ? " completed" : "") + (state.simpleMode ? " simple" : "");
 
-  card.append(buildCardHead(task, buildCardRight(task, record)));
+  card.append(buildCardHead(task, buildCardRight(task, record, card)));
 
   let slider = null, fill = null, thumb = null, tooltip = null;
   if (!state.simpleMode) {
@@ -398,9 +437,9 @@ function buildTaskCard(task) {
   return card;
 }
 
-function renderTasks() {
+function renderTasks(animateFrom=null) {
   ensureToday();
-  renderHeader();
+  renderHeader(animateFrom);
 
   const list = $("task-list");
   list.replaceChildren();
