@@ -12,8 +12,8 @@ service worker-cachen hedder `wins-v1`. Der findes **aktive beta-testere**.
 - `style.css` — **design tokens først** i `:root`, derefter komponenter i nummererede sektioner.
   Dark mode er udelukkende token-overrides.
 - `sw.js` / `manifest.json` — network-first, `skipWaiting()`. Brug aldrig `v2`/`v3` i storage- eller cachenavne.
-- `sfx/` — to mønt-klip. Preloades og decodedes ved opstart i `soundBank`; `playCoinSound()` vælger
-  én af fem varianter ud fra det samme `coinCount()`, der styrer partiklerne.
+- `sfx/` — ét mønt-klip. Preloades og decodedes ved opstart i `soundBank`; `playCoinSound()` laver
+  fem varianter med pitch og lag ud fra det samme `coinCount()`, der styrer partiklerne.
 
 ## Koderegler
 1. **Én kilde til sandhed.** Farver, fonte, størrelser og release notes defineres ét sted

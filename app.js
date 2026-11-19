@@ -15,7 +15,7 @@ const VERSIONS = [
       "Historikken viser nu tre måneder ad gangen",
       "Stryg til venstre for at slette, til højre for at redigere",
       "Ny standardvisning: Tjekliste",
-      "Mønt-lyde der passer til animationen — flere point giver flere mønter"
+      "Mønt-lyd med fem variationer — flere point giver flere lag"
     ]
   },
   {
@@ -259,11 +259,11 @@ function allTimeTotal() {
     sum + Object.values(day).reduce((s,r)=>s+(r.done?r.value:0),0),0);
 }
 
-/* Audio: both source clips are fetched and decoded once at startup, so the
-   first completion never waits on the network. */
+/* Audio: the coin clip is fetched and decoded once at startup, so the first
+   completion never waits on the network. The five variants are made from
+   pitch and layered repeats of this one sample. */
 const SOUND_FILES = {
-  coin: "sfx/super-mario-world-coin.mp3",
-  coins: "sfx/super-mario-world-multiple-coins.mp3"
+  coin: "sfx/super-mario-world-coin.mp3"
 };
 const soundBank = {}; // name -> decoded AudioBuffer
 
@@ -307,7 +307,7 @@ function playSample(name, { rate = 1, delay = 0, volume = 1 } = {}) {
 }
 
 // Five intensity levels derived from the same coin count that drives the
-// particle burst: bigger awards get more layers and a slightly higher pitch.
+// particle burst: bigger awards get a higher pitch and more staggered layers.
 function playCoinSound(points) {
   const coins = coinCount(points);
   if (coins <= 13) {
@@ -315,14 +315,14 @@ function playCoinSound(points) {
   } else if (coins <= 18) {
     playSample("coin");
   } else if (coins <= 24) {
-    playSample("coins", { volume: .9 });
+    playSample("coin", { rate: 1.12, volume: .95 });
   } else if (coins <= 30) {
-    playSample("coins");
-    playSample("coin", { rate: 1.12, delay: .16, volume: .8 });
+    playSample("coin", { rate: 1.06 });
+    playSample("coin", { rate: 1.2, delay: .16, volume: .8 });
   } else {
-    playSample("coins", { rate: 1.06 });
-    playSample("coin", { rate: 1.18, delay: .14, volume: .85 });
-    playSample("coin", { rate: .9, delay: .3, volume: .7 });
+    playSample("coin", { rate: 1.04 });
+    playSample("coin", { rate: 1.2, delay: .14, volume: .85 });
+    playSample("coin", { rate: 1.36, delay: .3, volume: .7 });
   }
 }
 
