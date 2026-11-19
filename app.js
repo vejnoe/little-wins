@@ -2,8 +2,35 @@
 "use strict";
 
 const STORAGE_KEY = "little_wins_v1";
-const APP_VERSION = "beta-2";
-const VERSION_LABEL = "Beta 2";
+
+// Single source of truth for release notes: the update popup and the version
+// history in the footer both read from this list. Newest version first.
+const VERSIONS = [
+  {
+    version: "beta-2",
+    label: "Beta 2",
+    date: "19. nov. 2026",
+    lead: "Little Wins er blevet opdateret — her er hvad der er nyt:",
+    changes: [
+      "Historikken viser nu tre måneder ad gangen",
+      "Stryg til venstre for at slette, til højre for at redigere",
+      "Ny standardvisning: Tjekliste"
+    ]
+  },
+  {
+    version: "beta-1",
+    label: "Beta 1",
+    date: "11. nov. 2026",
+    lead: "Den første version af Little Wins:",
+    changes: [
+      "Opgaver med point, gentagelse og daglig historik",
+      "Indstillinger, lyd, tema og JSON-backup"
+    ]
+  }
+];
+const CURRENT_VERSION = VERSIONS[0];
+const APP_VERSION = CURRENT_VERSION.version;
+const VERSION_LABEL = CURRENT_VERSION.label;
 const WINDOW_MONTHS = 3;
 const DAY_NAMES = ["Man","Tir","Ons","Tor","Fre","Lør","Søn"];
 const $ = id => document.getElementById(id);
@@ -55,30 +82,58 @@ function clamp(value,min,max) {
 
 const MAX_REPEAT_DAYS = 30;
 
-// Normalise on load so old backups keep working. The old boolean `recurring`
-// becomes repeatDays: 1 = "gentag hver dag", 0 = "gentager ikke".
-function normaliseTasks(tasks) {
-  tasks.forEach(t => {
-    let days = t.repeatDays;
-    if (typeof days !== "number" || !Number.isFinite(days)) days = t.recurring ? 1 : 0;
-    t.repeatDays = clamp(Math.round(days), 0, MAX_REPEAT_DAYS);
-    delete t.recurring;
-  });
-  return tasks;
+// Saved-data schema. Bump DATA_VERSION whenever the shape of `state` changes
+// and add a step to MIGRATIONS for the previous version. Keep old steps for at
+// least three app versions: beta testers upgrade in place and must never lose
+// a single task or history record.
+const DATA_VERSION = 1;
+const MIGRATIONS = {
+  0: raw => {
+    const tasks = (raw.tasks || []).map(t => {
+      const value = t.repeatDays;
+      const repeatDays = (typeof value === "number" && Number.isFinite(value))
+        ? value : (t.recurring ? 1 : 0);
+      const copy = { ...t, repeatDays: clamp(Math.round(repeatDays), 0, MAX_REPEAT_DAYS) };
+      delete copy.recurring;
+      return copy;
+    });
+    return {
+      ...raw,
+      tasks,
+      sound: raw.sound === undefined ? true : raw.sound,
+      theme: raw.theme || "light",
+      // "Tjekliste" is the default; only an explicit false keeps the slider view.
+      simpleMode: raw.simpleMode === undefined ? true : !!raw.simpleMode
+    };
+  }
+};
+
+// Upgrade any saved state to the current schema. Nothing is ever discarded:
+// if a step would leave us without tasks or days, the original data is kept.
+function syncState(raw) {
+  if (!raw || !Array.isArray(raw.tasks) || !raw.days || typeof raw.days !== "object") return null;
+  let data = { ...raw };
+  let version = Number.isFinite(raw.dataVersion) ? raw.dataVersion : 0;
+  for (let i = 0; version < DATA_VERSION && i < 20; i++, version++) {
+    const step = MIGRATIONS[version];
+    if (!step) break; // unknown old shape – keep data as-is rather than lose it
+    data = step(data);
+  }
+  if (!Array.isArray(data.tasks) || !data.days || typeof data.days !== "object") return null;
+  data.dataVersion = DATA_VERSION;
+  return data;
 }
 
 function load() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (saved && Array.isArray(saved.tasks) && saved.days) {
-      saved.tasks = normaliseTasks(saved.tasks);
-      // "Tjekliste" is the default; only an explicit false keeps the slider view.
-      saved.simpleMode = saved.simpleMode === undefined ? true : !!saved.simpleMode;
-      return saved;
-    }
+    const synced = syncState(JSON.parse(localStorage.getItem(STORAGE_KEY)));
+    if (synced) return synced;
   } catch(e) {}
   isFreshInstall = true;
-  return {tasks:[],days:{},sound:true,lastDate:null,theme:"light",simpleMode:true};
+  return {
+    tasks:[], days:{}, sound:true, lastDate:null,
+    theme:"light", simpleMode:true, dataVersion:DATA_VERSION, appVersion:APP_VERSION
+  };
 }
 
 let state = load();
@@ -860,6 +915,7 @@ $("show-logged").addEventListener("click",()=>{
 $("update-ok").addEventListener("click",()=>{
   $("update-overlay").classList.add("hidden");
 });
+$("changelog-button").addEventListener("click",()=>openModal("changelog"));
 
 /* Modal system (reused for create, edit and settings) */
 let currentModal = null;
@@ -871,7 +927,8 @@ let submitting = false;
 const MODAL_TITLES = {
   create: "Opret ny opgave",
   edit: "Rediger opgave",
-  settings: "Indstillinger"
+  settings: "Indstillinger",
+  changelog: "Versionshistorik"
 };
 
 function openModal(type, task = null) {
@@ -881,6 +938,7 @@ function openModal(type, task = null) {
   const body = $("modal-body");
   body.replaceChildren();
   if (type === "create" || type === "edit") renderTaskForm(body, task);
+  else if (type === "changelog") renderChangelog(body);
   else renderSettingsForm(body);
   $("overlay").classList.remove("hidden");
   // focus first input if any
@@ -1140,11 +1198,12 @@ function importData(file) {
         alert("Ugyldig backup-fil.");
         return;
       }
-      state = parsed;
-      state.tasks = normaliseTasks(state.tasks);
-      state.simpleMode = !!state.simpleMode;
-      if (!state.theme) state.theme = "light";
-      if (state.sound === undefined) state.sound = true;
+      const synced = syncState(parsed);
+      if (!synced) {
+        alert("Ugyldig backup-fil.");
+        return;
+      }
+      state = synced;
       state.appVersion = APP_VERSION;
       save();
       applyTheme();
@@ -1279,7 +1338,50 @@ function renderSettingsForm(body) {
   body.append(themeField, soundField, modeField, dataField, versionLine, saveBtn);
 }
 
-/* Sound toggle moved to settings modal */
+// Both the "what's new" popup and the footer history read from VERSIONS.
+function renderUpdateNotice() {
+  $("update-badge").textContent = "NY VERSION";
+  $("update-title").textContent = "Opdateret til " + CURRENT_VERSION.label;
+  $("update-lead").textContent = CURRENT_VERSION.lead;
+  const list = $("update-list");
+  list.replaceChildren();
+  CURRENT_VERSION.changes.forEach(change => {
+    const li = document.createElement("li");
+    li.textContent = change;
+    list.append(li);
+  });
+}
+
+function renderChangelog(body) {
+  const intro = document.createElement("p");
+  intro.className = "changelog-intro";
+  intro.textContent = "Her ser du, hvad der er nyt i hver version. Dine opgaver og din historik bevares automatisk ved opdatering.";
+  body.append(intro);
+
+  VERSIONS.forEach((release, index) => {
+    const entry = document.createElement("section");
+    entry.className = "changelog-entry" + (index === 0 ? " current" : "");
+
+    const head = document.createElement("div");
+    head.className = "changelog-head";
+    const name = document.createElement("strong");
+    name.textContent = release.label;
+    const meta = document.createElement("span");
+    meta.textContent = (index === 0 ? "Aktuel · " : "") + release.date;
+    head.append(name, meta);
+
+    const list = document.createElement("ul");
+    list.className = "changelog-list";
+    release.changes.forEach(change => {
+      const li = document.createElement("li");
+      li.textContent = change;
+      list.append(li);
+    });
+
+    entry.append(head, list);
+    body.append(entry);
+  });
+}
 
 /* Day rollover */
 function checkDate() {
@@ -1311,6 +1413,7 @@ function handleVersionOnLoad() {
 
 /* Initialisation */
 applyTheme();
+renderUpdateNotice();
 handleVersionOnLoad();
 ensureToday();
 renderTasks();

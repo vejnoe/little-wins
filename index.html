@@ -28,13 +28,7 @@
   <div class="total-row">
     <div class="total-left">
       <div class="coin-anchor" id="coin-anchor">
-        <!--<svg viewBox="0 0 36 36" fill="none">
-          <circle cx="18" cy="18" r="16" fill="#FBBF24" stroke="#111" stroke-width="2.5"/>
-          <ellipse cx="18" cy="18" rx="10" ry="12" fill="#F59E0B" stroke="#111" stroke-width="1.5"/>
-          <rect x="15.5" y="10" width="5" height="16" rx="2.5" fill="#FEF08A"/>
-          <rect x="17" y="11" width="2" height="14" rx="1" fill="white"/>
-          </svg>-->
-          <img src="happy-coin.png" alt="coin" width="59" height="59">
+        <img src="happy-coin.png" alt="coin" width="59" height="59">
       </div>
       <div>
         <div class="total-number num" id="total-points">0</div>
@@ -77,8 +71,8 @@
 
 <footer>
   <div class="footer-row">
-    <span></span>
-    <button class="settings-button" id="settings-button">⚙ Indstillinger</button>
+    <button class="footer-button" id="changelog-button" type="button">🕘 Versionshistorik</button>
+    <button class="footer-button" id="settings-button" type="button">⚙ Indstillinger</button>
   </div>
 </footer>
 
@@ -96,14 +90,10 @@
 
 <div class="overlay hidden" id="update-overlay" role="dialog" aria-modal="true" aria-labelledby="update-title">
   <div class="modal update-modal">
-    <div class="update-badge">NY VERSION</div>
-    <h2 id="update-title">Opdateret til Beta 2</h2>
-    <p class="update-lead">Little Wins er blevet opdateret — her er hvad der er nyt:</p>
-    <ul class="update-list">
-      <li>Historikken viser nu tre måneder ad gangen</li>
-      <li>Stryg til venstre for at slette, til højre for at redigere</li>
-      <li>Ny standardvisning: Tjekliste</li>
-    </ul>
+    <div class="update-badge" id="update-badge"></div>
+    <h2 id="update-title"></h2>
+    <p class="update-lead" id="update-lead"></p>
+    <ul class="update-list" id="update-list"></ul>
     <button class="save-button" id="update-ok" type="button">Fedt, lad os gå!</button>
   </div>
 </div>
