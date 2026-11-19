@@ -14,7 +14,8 @@ const VERSIONS = [
     changes: [
       "Historikken viser nu tre måneder ad gangen",
       "Stryg til venstre for at slette, til højre for at redigere",
-      "Ny standardvisning: Tjekliste"
+      "Ny standardvisning: Tjekliste",
+      "Mønt-lyde der passer til animationen — flere point giver flere mønter"
     ]
   },
   {
@@ -258,21 +259,88 @@ function allTimeTotal() {
     sum + Object.values(day).reduce((s,r)=>s+(r.done?r.value:0),0),0);
 }
 
+/* Audio: both source clips are fetched and decoded once at startup, so the
+   first completion never waits on the network. */
+const SOUND_FILES = {
+  coin: "sfx/super-mario-world-coin.mp3",
+  coins: "sfx/super-mario-world-multiple-coins.mp3"
+};
+const soundBank = {}; // name -> decoded AudioBuffer
+
+function getAudioContext() {
+  if (!soundContext) {
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    if (!Ctor) return null;
+    soundContext = new Ctor();
+  }
+  if (soundContext.state === "suspended") soundContext.resume();
+  return soundContext;
+}
+
+function preloadSounds() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  Object.entries(SOUND_FILES).forEach(([name, url]) => {
+    fetch(url)
+      .then(res => res.arrayBuffer())
+      .then(data => ctx.decodeAudioData(data))
+      .then(buffer => { soundBank[name] = buffer; })
+      .catch(() => {});
+  });
+}
+
+function playSample(name, { rate = 1, delay = 0, volume = 1 } = {}) {
+  if (!state.sound) return;
+  const ctx = getAudioContext();
+  const buffer = soundBank[name];
+  if (!ctx || !buffer) return;
+  try {
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = rate;
+    const gain = ctx.createGain();
+    gain.gain.value = volume;
+    source.connect(gain);
+    gain.connect(ctx.destination);
+    source.start(ctx.currentTime + delay);
+  } catch(e) {}
+}
+
+// Five intensity levels derived from the same coin count that drives the
+// particle burst: bigger awards get more layers and a slightly higher pitch.
+function playCoinSound(points) {
+  const coins = coinCount(points);
+  if (coins <= 13) {
+    playSample("coin", { rate: .92, volume: .9 });
+  } else if (coins <= 18) {
+    playSample("coin");
+  } else if (coins <= 24) {
+    playSample("coins", { volume: .9 });
+  } else if (coins <= 30) {
+    playSample("coins");
+    playSample("coin", { rate: 1.12, delay: .16, volume: .8 });
+  } else {
+    playSample("coins", { rate: 1.06 });
+    playSample("coin", { rate: 1.18, delay: .14, volume: .85 });
+    playSample("coin", { rate: .9, delay: .3, volume: .7 });
+  }
+}
+
 function playTone(frequency=900,duration=.12) {
   if (!state.sound) return;
+  const ctx = getAudioContext();
+  if (!ctx) return;
   try {
-    soundContext ||= new (window.AudioContext || window.webkitAudioContext)();
-    if (soundContext.state==="suspended") soundContext.resume();
-    const osc=soundContext.createOscillator();
-    const gain=soundContext.createGain();
+    const osc=ctx.createOscillator();
+    const gain=ctx.createGain();
     osc.type="sine";
-    osc.frequency.setValueAtTime(frequency,soundContext.currentTime);
-    gain.gain.setValueAtTime(.08,soundContext.currentTime);
-    gain.gain.exponentialRampToValueAtTime(.001,soundContext.currentTime+duration);
+    osc.frequency.setValueAtTime(frequency,ctx.currentTime);
+    gain.gain.setValueAtTime(.08,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+duration);
     osc.connect(gain);
-    gain.connect(soundContext.destination);
+    gain.connect(ctx.destination);
     osc.start();
-    osc.stop(soundContext.currentTime+duration);
+    osc.stop(ctx.currentTime+duration);
   } catch(e) {}
 }
 
@@ -288,6 +356,9 @@ function animateCoins(card, points) {
   const to=anchor.getBoundingClientRect();
   const endX=to.left+to.width/2;
   const endY=to.top+to.height/2;
+
+  // Sound starts with the burst; clips are ~0.7-0.9s, matching the flight.
+  playCoinSound(points);
 
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
     anchor.classList.add("coin-bounce");
@@ -320,7 +391,6 @@ function animateCoins(card, points) {
   setTimeout(()=>{
     anchor.classList.add("coin-bounce");
     setTimeout(()=>anchor.classList.remove("coin-bounce"),450);
-    playTone(1318,.2);
   },900);
 }
 
@@ -1413,6 +1483,7 @@ function handleVersionOnLoad() {
 
 /* Initialisation */
 applyTheme();
+preloadSounds();
 renderUpdateNotice();
 handleVersionOnLoad();
 ensureToday();

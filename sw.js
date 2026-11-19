@@ -4,7 +4,9 @@ const ASSETS = [
   './index.html',
   './style.css',
   './app.js',
-  './manifest.json'
+  './manifest.json',
+  './sfx/super-mario-world-coin.mp3',
+  './sfx/super-mario-world-multiple-coins.mp3'
 ];
 
 self.addEventListener('install', (e) => {

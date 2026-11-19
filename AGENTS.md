@@ -12,6 +12,8 @@ service worker-cachen hedder `wins-v1`. Der findes **aktive beta-testere**.
 - `style.css` — **design tokens først** i `:root`, derefter komponenter i nummererede sektioner.
   Dark mode er udelukkende token-overrides.
 - `sw.js` / `manifest.json` — network-first, `skipWaiting()`. Brug aldrig `v2`/`v3` i storage- eller cachenavne.
+- `sfx/` — to mønt-klip. Preloades og decodedes ved opstart i `soundBank`; `playCoinSound()` vælger
+  én af fem varianter ud fra det samme `coinCount()`, der styrer partiklerne.
 
 ## Koderegler
 1. **Én kilde til sandhed.** Farver, fonte, størrelser og release notes defineres ét sted
@@ -33,6 +35,8 @@ service worker-cachen hedder `wins-v1`. Der findes **aktive beta-testere**.
    begge veje. Ingen bekræftelse ved fortryd; "Log gennemførte" er en eksplicit handling.
 8. **Professionelt, ikke slub.** Ingen død CSS, ingen magic numbers, ingen duplikerede tekster.
    Nye konstanter og migrationstrin får en kort kommentar, der forklarer hvorfor de findes.
+9. **Lyd følger animationen.** Nye klip preloades ved opstart, tilføjes til SW's `ASSETS` og tilpasses
+   animationens varighed — aldrig heap-fetch i selve klik-handlingen.
 
 ## Sådan tilføjer du en funktion
 1. Læs de relevante dele af `app.js`, `index.html` og `style.css` først — antag ingenting.
