@@ -14,7 +14,7 @@ const VERSIONS = [
     changes: [
       "Historikken viser nu tre måneder ad gangen",
       "Stryg til venstre for at slette, til højre for at redigere",
-      "Ny standardvisning: Tjekliste",
+      "Point sættes én gang ved oprettelse — opgaven giver altid det beløb",
       "Mønt-lyd med fem variationer — flere point giver flere lag"
     ]
   },
@@ -74,9 +74,6 @@ function mondayOfWeek(date) {
   d.setDate(d.getDate()-day);
   return d;
 }
-function minPoints(task) {
-  return (task && task.min) ? task.min : 0;
-}
 function clamp(value,min,max) {
   return Math.max(min,Math.min(max,value));
 }
@@ -87,7 +84,7 @@ const MAX_REPEAT_DAYS = 30;
 // and add a step to MIGRATIONS for the previous version. Keep old steps for at
 // least three app versions: beta testers upgrade in place and must never lose
 // a single task or history record.
-const DATA_VERSION = 1;
+const DATA_VERSION = 2;
 const MIGRATIONS = {
   0: raw => {
     const tasks = (raw.tasks || []).map(t => {
@@ -102,10 +99,32 @@ const MIGRATIONS = {
       ...raw,
       tasks,
       sound: raw.sound === undefined ? true : raw.sound,
-      theme: raw.theme || "light",
-      // "Tjekliste" is the default; only an explicit false keeps the slider view.
-      simpleMode: raw.simpleMode === undefined ? true : !!raw.simpleMode
+      theme: raw.theme || "light"
     };
+  },
+  // One point value per task, set at creation. `max` becomes `points`; open
+  // records adopts the new value while completed history keeps what was earned.
+  1: raw => {
+    const tasks = raw.tasks.map(t => {
+      const source = Number.isFinite(t.points) ? t.points : t.max;
+      const copy = { ...t, points: Math.max(1000, Math.round(source || 1000)) };
+      delete copy.max;
+      return copy;
+    });
+    const pointsById = Object.fromEntries(tasks.map(t => [t.id, t.points]));
+    const days = {};
+    Object.entries(raw.days).forEach(([key, day]) => {
+      const next = {};
+      Object.entries(day).forEach(([id, record]) => {
+        const points = pointsById[id];
+        next[id] = points !== undefined && !record.done
+          ? { ...record, value: points }
+          : { ...record };
+      });
+      days[key] = next;
+    });
+    const { simpleMode, ...rest } = raw;
+    return { ...rest, tasks, days };
   }
 };
 
@@ -133,7 +152,7 @@ function load() {
   isFreshInstall = true;
   return {
     tasks:[], days:{}, sound:true, lastDate:null,
-    theme:"light", simpleMode:true, dataVersion:DATA_VERSION, appVersion:APP_VERSION
+    theme:"light", dataVersion:DATA_VERSION, appVersion:APP_VERSION
   };
 }
 
@@ -214,9 +233,9 @@ function isLoggedToday(task) {
   return !!(record && record.done && record.archived);
 }
 
-// In simple mode a task always awards its full amount, so fresh records start there.
+// A task always awards its fixed point value, set when the task was created.
 function freshValue(task) {
-  return state.simpleMode ? task.max : minPoints(task);
+  return task.points;
 }
 
 function ensureToday() {
@@ -324,24 +343,6 @@ function playCoinSound(points) {
     playSample("coin", { rate: 1.2, delay: .14, volume: .85 });
     playSample("coin", { rate: 1.36, delay: .3, volume: .7 });
   }
-}
-
-function playTone(frequency=900,duration=.12) {
-  if (!state.sound) return;
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  try {
-    const osc=ctx.createOscillator();
-    const gain=ctx.createGain();
-    osc.type="sine";
-    osc.frequency.setValueAtTime(frequency,ctx.currentTime);
-    gain.gain.setValueAtTime(.08,ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+duration);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime+duration);
-  } catch(e) {}
 }
 
 // More points means more coins – capped so large awards stay tasteful.
@@ -503,8 +504,7 @@ function toggleDone(task, record, card) {
   } else {
     record.done = true;
     record.archived = false;
-    // Simple mode always awards the full amount; standard mode keeps a manual value.
-    if (state.simpleMode || record.value === 0) record.value = task.max;
+    record.value = task.points;
     justCompletedId = task.id;
     animateCoins(card, record.value);
   }
@@ -517,7 +517,7 @@ function buildCardRight(task, record, card) {
   right.className = "task-right";
   const value = document.createElement("span");
   value.className = "task-value num";
-  value.textContent = format(state.simpleMode ? task.max : record.value);
+  value.textContent = format(record.value);
   const done = document.createElement("button");
   done.className = "done-button";
   done.type = "button";
@@ -532,7 +532,6 @@ function buildTaskCard(task) {
   const record = entry(task);
   const card = document.createElement("article");
   card.className = "task" + (record.done ? " completed" : "") +
-    (state.simpleMode ? " simple" : "") +
     (task.id === justCompletedId ? " just-completed" : "");
 
   // Revealed by horizontal swipes on touch devices: pencil on the left, bin on the right.
@@ -549,47 +548,10 @@ function buildTaskCard(task) {
   const content = document.createElement("div");
   content.className = "task-content";
   content.append(buildCardHead(task, buildCardRight(task, record, card)));
-
-  let slider = null, fill = null, thumb = null, tooltip = null;
-  if (!state.simpleMode) {
-    const percent = clamp(
-      ((record.value - minPoints(task)) / (task.max - minPoints(task))) * 100, 0, 100
-    );
-    const area = document.createElement("div");
-    area.className = "slider-area";
-    slider = document.createElement("div");
-    slider.className = "slider" + (record.done ? " locked" : "");
-    slider.setAttribute("role", "slider");
-    slider.setAttribute("tabindex", record.done ? "-1" : "0");
-    slider.setAttribute("aria-label", "Potentielle point for " + task.title);
-    slider.setAttribute("aria-valuemin", minPoints(task));
-    slider.setAttribute("aria-valuemax", task.max);
-    slider.setAttribute("aria-valuenow", record.value);
-    const track = document.createElement("div");
-    track.className = "track";
-    fill = document.createElement("div");
-    fill.className = "fill";
-    fill.style.width = percent + "%";
-    track.append(fill);
-    thumb = document.createElement("div");
-    thumb.className = "thumb";
-    thumb.style.left = percent + "%";
-    tooltip = document.createElement("div");
-    tooltip.className = "tooltip num";
-    tooltip.textContent = format(record.value);
-    tooltip.style.left = percent + "%";
-    slider.append(track, thumb, tooltip);
-    area.append(slider);
-    content.append(area);
-  }
-
   content.append(buildCardActions(task));
   card.append(swipeBg, content);
 
   if (isInTouchMode) attachSwipe(content, editAction, deleteAction, task);
-  if (slider && !record.done) {
-    attachSlider(slider, task, record, fill, thumb, tooltip, content.querySelector(".task-value"));
-  }
   return card;
 }
 
@@ -659,77 +621,11 @@ function renderTasks(animateFrom=null) {
   }
 }
 
-function attachSlider(slider,task,record,fill,thumb,tooltip,valueEl) {
-  let dragging=false;
-  let lastTick=record.value;
-
-  function update(clientX) {
-    const rect=slider.getBoundingClientRect();
-    const ratio=clamp((clientX-rect.left)/rect.width,0,1);
-    const next=Math.round(minPoints(task)+(task.max-minPoints(task))*ratio);
-    const percent=ratio*100;
-
-    record.value=next;
-    fill.style.width=percent+"%";
-    thumb.style.left=percent+"%";
-    tooltip.style.left=percent+"%";
-    tooltip.textContent=format(next);
-    valueEl.textContent=format(next);
-    slider.setAttribute("aria-valuenow",next);
-
-    if(Math.abs(next-lastTick)>=Math.max(1,task.max/30)) {
-      playTone(480,.025);
-      lastTick=next;
-    }
-    renderHeader();
-  }
-
-  slider.addEventListener("pointerdown",e=>{
-    if(record.done) return;
-    dragging=true;
-    slider.classList.add("dragging");
-    slider.setPointerCapture(e.pointerId);
-    update(e.clientX);
-  });
-
-  slider.addEventListener("pointermove",e=>{
-    if(dragging) update(e.clientX);
-  });
-
-  function endDrag() {
-    if(!dragging) return;
-    dragging=false;
-    slider.classList.remove("dragging");
-    save();
-  }
-  slider.addEventListener("pointerup",endDrag);
-  slider.addEventListener("pointercancel",endDrag);
-  slider.addEventListener("lostpointercapture",endDrag);
-
-  slider.addEventListener("keydown",e=>{
-    let next=record.value;
-    const step=Math.max(1,Math.round((task.max-minPoints(task))/100));
-    if(e.key==="ArrowRight"||e.key==="ArrowUp") next+=step;
-    else if(e.key==="ArrowLeft"||e.key==="ArrowDown") next-=step;
-    else if(e.key==="Home") next=minPoints(task);
-    else if(e.key==="End") next=task.max;
-    else return;
-    e.preventDefault();
-    const rect=slider.getBoundingClientRect();
-    const ratio=(clamp(next,minPoints(task),task.max)-minPoints(task))/(task.max-minPoints(task));
-    update(rect.left+ratio*rect.width);
-    save();
-  });
-}
-
 /* Touch gestures: swipe left reveals the bin, swipe right reveals the pencil. */
 function attachSwipe(content, editAction, deleteAction, task) {
-  const slider = content.querySelector(".slider");
   let startX = null, startY = null, axis = null;
 
   content.addEventListener("touchstart", e => {
-    // Let the slider keep its own gestures.
-    if (slider && slider.contains(e.target)) { startX = null; return; }
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     axis = null;
@@ -990,7 +886,7 @@ $("changelog-button").addEventListener("click",()=>openModal("changelog"));
 /* Modal system (reused for create, edit and settings) */
 let currentModal = null;
 let editingTask = null;
-let createMax = 1000;
+let createPoints = 1000;
 let createRepeatDays = 0;
 let submitting = false;
 
@@ -1048,7 +944,6 @@ function repeatValueLabel(days) {
 
 /* Shared task form – used for both create and edit */
 function renderTaskForm(body, task = null) {
-  const simple = state.simpleMode;
   const MIN = 1000;
   const MAX = 1000000;
 
@@ -1065,24 +960,22 @@ function renderTaskForm(body, task = null) {
   nameField.append(nameLabel, nameInput);
 
   // One reusable slider control, used for both the points and the repeat interval.
-  createMax = task ? clamp(task.max, MIN, MAX) : MIN;
+  createPoints = task ? clamp(task.points, MIN, MAX) : MIN;
   const pointsControl = makeRangeControl({
     min: MIN,
     max: MAX,
-    value: createMax,
-    ariaLabel: simple ? "Point for opgaven" : "Maksimale point",
+    value: createPoints,
+    ariaLabel: "Point for opgaven",
     formatTooltip: v => format(v),
-    onChange: v => { createMax = v; }
+    onChange: v => { createPoints = v; }
   });
   const pointsField = document.createElement("div");
   pointsField.className = "field";
   const pointsLabel = document.createElement("label");
-  pointsLabel.textContent = simple ? "Point" : "Maksimale point";
+  pointsLabel.textContent = "Point";
   const pointsHint = document.createElement("div");
   pointsHint.className = "hint";
-  pointsHint.textContent = simple
-    ? "Opgaven giver altid dette beløb, når du sætter kryds."
-    : "Træk skyderen for at vælge maksimal point.";
+  pointsHint.textContent = "Opgaven giver altid dette beløb, når du sætter kryds.";
   pointsField.append(pointsLabel, pointsControl.area, pointsControl.valueDisplay, pointsHint);
 
   createRepeatDays = task ? (task.repeatDays || 0) : 0;
@@ -1122,13 +1015,13 @@ function submitTask() {
   submitting = true;
   try {
     const title = $("task-name").value.trim();
-    const max = createMax;
+    const points = createPoints;
     const repeatDays = clamp(Math.round(createRepeatDays), 0, MAX_REPEAT_DAYS);
     if (!title) {
       $("form-error").textContent = "Skriv et navn til opgaven.";
       return;
     }
-    if (!Number.isSafeInteger(max) || max < 1000) {
+    if (!Number.isSafeInteger(points) || points < 1000) {
       $("form-error").textContent = "Point skal være mindst 1.000.";
       return;
     }
@@ -1142,18 +1035,18 @@ function submitTask() {
         return;
       }
       task.title = title;
-      task.max = max;
+      task.points = points;
       task.repeatDays = repeatDays;
-      // Keep old daily values within the new range.
+      // Open tasks adopt the new value; completed history keeps what was earned.
       Object.values(state.days).forEach(day => {
         const record = day[task.id];
-        if (record) record.value = clamp(record.value, minPoints(task), task.max);
+        if (record && !record.done) record.value = points;
       });
     } else {
       const id = (crypto.randomUUID && typeof crypto.randomUUID === "function")
         ? crypto.randomUUID()
         : (Date.now().toString(36) + Math.random().toString(36).slice(2));
-      task = { id, title, max, repeatDays };
+      task = { id, title, points, repeatDays };
       state.tasks.push(task);
     }
     ensureToday();
@@ -1332,40 +1225,6 @@ function renderSettingsForm(body) {
   toggleRow.append(toggleLabel, toggle);
   soundField.append(soundLabel, toggleRow);
 
-  // Simple mode: one global setting that reinterprets "max point" as a fixed
-  // award and replaces the daily slider with a single checkmark.
-  const modeField = document.createElement("div");
-  modeField.className = "field";
-  const modeLabel = document.createElement("label");
-  modeLabel.textContent = "Visning";
-  const modeRow = document.createElement("div");
-  modeRow.className = "toggle-row";
-  const modeText = document.createElement("span");
-  modeText.className = "toggle-label";
-  // "Tjekliste" describes the experience better than "kun kryds": the points
-  // are fixed and the daily job is simply to check tasks off.
-  const MODE_LABELS = {
-    standard: "Med skyder",
-    simple: "Tjekliste"
-  };
-  modeText.textContent = state.simpleMode ? MODE_LABELS.simple : MODE_LABELS.standard;
-  const modeToggle = document.createElement("button");
-  modeToggle.type = "button";
-  modeToggle.className = "toggle" + (state.simpleMode ? " on" : "");
-  modeToggle.setAttribute("aria-label", "Skift visning");
-  modeToggle.addEventListener("click", () => {
-    state.simpleMode = !state.simpleMode;
-    save();
-    modeToggle.classList.toggle("on", state.simpleMode);
-    modeText.textContent = state.simpleMode ? MODE_LABELS.simple : MODE_LABELS.standard;
-    renderTasks();
-  });
-  const modeHint = document.createElement("div");
-  modeHint.className = "hint";
-  modeHint.textContent = "Tjekliste giver faste point med ét tryk. Med skyder kan du give point efter indsats.";
-  modeRow.append(modeText, modeToggle);
-  modeField.append(modeLabel, modeRow, modeHint);
-
   // Data backup
   const dataField = document.createElement("div");
   dataField.className = "field";
@@ -1405,7 +1264,7 @@ function renderSettingsForm(body) {
   versionLine.className = "version-line";
   versionLine.textContent = "Little Wins · " + VERSION_LABEL;
 
-  body.append(themeField, soundField, modeField, dataField, versionLine, saveBtn);
+  body.append(themeField, soundField, dataField, versionLine, saveBtn);
 }
 
 // Both the "what's new" popup and the footer history read from VERSIONS.

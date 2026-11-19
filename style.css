@@ -253,8 +253,6 @@ header {
 .slider:focus-visible .thumb,.create-slider .thumb {
   transform:translate(-50%,-50%) scale(1);
 }
-.slider.locked {cursor:default;opacity:.8;touch-action:auto}
-.slider.locked .thumb {transform:translate(-50%,-50%) scale(0)}
 .tooltip {
   position:absolute;bottom:29px;left:0%;
   transform:translateX(-50%) translateY(4px);
