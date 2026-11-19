@@ -63,15 +63,15 @@
 
   <section id="history-view" hidden>
     <div class="section-heading">
-      <h2 class="heading">Uge-overblik</h2>
+      <h2 class="heading">Overblik</h2>
       <div class="week-nav">
-        <button class="nav-button" id="week-prev" aria-label="Forrige uge">‹</button>
-        <span class="week-title" id="week-current"></span>
-        <button class="nav-button" id="week-next" aria-label="Næste uge">›</button>
+        <button class="nav-button" id="history-prev" aria-label="Forrige 3 måneder">‹</button>
+        <span class="week-title" id="history-range"></span>
+        <button class="nav-button" id="history-next" aria-label="Næste 3 måneder">›</button>
       </div>
     </div>
     <div class="week-list" id="week-list"></div>
-    <p class="history-note">Hver dag tæller sine egne optjente point. Uger uden aktivitet vises også, så du kan følge historikken uden at skulle nå et bestemt mål.</p>
+    <p class="history-note">Historikken viser tre måneder ad gangen. Er der ældre data, kan du bladre tre måneder tilbage eller frem. Uger uden aktivitet vises også.</p>
   </section>
 </main>
 
@@ -91,6 +91,20 @@
       <button class="close-button" id="close-modal" aria-label="Luk">×</button>
     </div>
     <div id="modal-body"></div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="update-overlay" role="dialog" aria-modal="true" aria-labelledby="update-title">
+  <div class="modal update-modal">
+    <div class="update-badge">NY VERSION</div>
+    <h2 id="update-title">Opdateret til Beta 2</h2>
+    <p class="update-lead">Little Wins er blevet opdateret — her er hvad der er nyt:</p>
+    <ul class="update-list">
+      <li>Historikken viser nu tre måneder ad gangen</li>
+      <li>Stryg til venstre for at slette, til højre for at redigere</li>
+      <li>Ny standardvisning: Tjekliste</li>
+    </ul>
+    <button class="save-button" id="update-ok" type="button">Fedt, lad os gå!</button>
   </div>
 </div>
 

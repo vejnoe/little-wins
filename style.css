@@ -87,11 +87,27 @@ main {flex:1;padding:20px 24px 28px}
 .task-list {display:flex;flex-direction:column;gap:13px}
 .task {
   border:2px solid var(--ink);border-radius:var(--radius);
-  padding:17px;background:white;
+  padding:0;background:white;
   box-shadow:3px 3px 0 var(--ink);
   transition:background .2s,border-color .2s,box-shadow .2s,transform .2s,opacity .2s;
   position:relative;
   overflow:hidden;
+}
+.task-content {
+  position:relative;z-index:1;
+  padding:17px;background:inherit;
+  transition:transform .2s ease;
+}
+.swipe-bg {position:absolute;inset:0;display:flex;justify-content:space-between;z-index:0}
+.swipe-action {
+  width:90px;display:flex;align-items:center;justify-content:center;
+  opacity:0;transition:opacity .12s;
+}
+.swipe-action.edit {background:var(--ink);color:var(--paper)}
+.swipe-action.delete {background:#c0392b;color:white}
+.swipe-action svg {width:24px;height:24px}
+@media(hover:none) {
+  .task {touch-action:pan-y}
 }
 .task.completed {
   background:#fafaf8;border-color:#deded9;box-shadow:none;
@@ -277,7 +293,7 @@ footer {
 .week-head {display:flex;justify-content:space-between;align-items:center}
 .week-id {font:700 19px "Space Grotesk",sans-serif}
 .week-total {font:700 16px "Space Grotesk",sans-serif}
-.chart {width:100%;height:82px;display:block;margin-top:13px;overflow:visible}
+.chart {display:block;margin-top:13px;max-width:100%;overflow:visible}
 .chart-line {
   fill:none;stroke:var(--ink);stroke-width:2;
   stroke-linecap:round;stroke-linejoin:round;
@@ -322,6 +338,18 @@ footer {
 }
 .save-button:active {transform:translate(2px,2px);box-shadow:none}
 .error {font-size:11px;color:#b33;min-height:16px}
+.version-line {font-size:10px;color:#aaa;text-align:center;margin:2px 0 12px}
+
+/* What's-new notice */
+.update-badge {
+  display:inline-block;background:var(--ink);color:var(--paper);
+  font:700 10px "Inter",sans-serif;letter-spacing:1px;
+  padding:5px 9px;border-radius:6px;margin-bottom:12px;
+}
+.update-modal h2 {margin:0 0 8px}
+.update-lead {font-size:13px;color:var(--muted);line-height:1.5;margin:0 0 12px}
+.update-list {margin:0 0 20px;padding-left:18px;font-size:13px;line-height:1.7}
+.update-list li::marker {color:var(--yellow-dark)}
 
 /* Settings */
 .settings-button {
@@ -375,7 +403,7 @@ footer {
 /* Dark mode */
 html.dark {
   --bg:#121212;
-  --paper:#1e1e1e;
+  --paper:#111;
   --ink:#e8e8e8;
   --muted:#999;
   --line:#333;
@@ -425,7 +453,7 @@ html.dark .range-slider::-webkit-slider-thumb {background:var(--yellow);border-c
 }
 @media(max-width:380px) {
   header,main {padding-left:17px;padding-right:17px}
-  .task {padding:14px}
+  .task-content {padding:14px}
   .task-title {font-size:12px}
   .task-value {font-size:12px}
 }

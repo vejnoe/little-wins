@@ -2,8 +2,14 @@
 "use strict";
 
 const STORAGE_KEY = "little_wins_v1";
+const APP_VERSION = "beta-2";
+const VERSION_LABEL = "Beta 2";
+const WINDOW_MONTHS = 3;
 const DAY_NAMES = ["Man","Tir","Ons","Tor","Fre","Lør","Søn"];
 const $ = id => document.getElementById(id);
+
+// True when no saved data existed before this load (used by the update notice).
+let isFreshInstall = false;
 
 const format = n => Math.round(n).toLocaleString("da-DK");
 
@@ -40,10 +46,6 @@ function mondayOfWeek(date) {
   d.setDate(d.getDate()-day);
   return d;
 }
-function weekLabel(date) {
-  const w = isoWeek(date);
-  return `Uge ${w.week} · ${w.year}`;
-}
 function minPoints(task) {
   return (task && task.min) ? task.min : 0;
 }
@@ -70,11 +72,13 @@ function load() {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (saved && Array.isArray(saved.tasks) && saved.days) {
       saved.tasks = normaliseTasks(saved.tasks);
-      saved.simpleMode = !!saved.simpleMode;
+      // "Tjekliste" is the default; only an explicit false keeps the slider view.
+      saved.simpleMode = saved.simpleMode === undefined ? true : !!saved.simpleMode;
       return saved;
     }
   } catch(e) {}
-  return {tasks:[],days:{},sound:true,lastDate:null,theme:"light",simpleMode:false};
+  isFreshInstall = true;
+  return {tasks:[],days:{},sound:true,lastDate:null,theme:"light",simpleMode:true};
 }
 
 let state = load();
@@ -84,7 +88,8 @@ let justCompletedId = null;
 // View-only: whether logged tasks from today are shown at the bottom of the list.
 let showLogged = false;
 let currentDate = localDate();
-let selectedWeek = weekKey(new Date());
+// History shows a three-month window; 0 = the most recent one.
+let historyOffset = 0;
 let soundContext = null;
 // Touch vs. desktop: (hover: none) matches tablets/phones. Stable across renders
 // so swipe-to-delete is attached on first load, not only after a touch event.
@@ -339,6 +344,8 @@ function buildCardHead(task, right) {
 function buildCardActions(task) {
   const actions = document.createElement("div");
   actions.className = "task-actions";
+  // On touch devices these are replaced by swipe-right (edit) / swipe-left (delete).
+  if (isInTouchMode) return actions;
 
   const edit = document.createElement("button");
   edit.className = "edit-button";
@@ -403,7 +410,20 @@ function buildTaskCard(task) {
     (state.simpleMode ? " simple" : "") +
     (task.id === justCompletedId ? " just-completed" : "");
 
-  card.append(buildCardHead(task, buildCardRight(task, record, card)));
+  // Revealed by horizontal swipes on touch devices: pencil on the left, bin on the right.
+  const swipeBg = document.createElement("div");
+  swipeBg.className = "swipe-bg";
+  const editAction = document.createElement("div");
+  editAction.className = "swipe-action edit";
+  editAction.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m15 5 4 4M4 20l4.5-1 10-10a2.8 2.8 0 0 0-4-4l-10 10L4 20Z"/></svg>';
+  const deleteAction = document.createElement("div");
+  deleteAction.className = "swipe-action delete";
+  deleteAction.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5m4-5v5"/></svg>';
+  swipeBg.append(editAction, deleteAction);
+
+  const content = document.createElement("div");
+  content.className = "task-content";
+  content.append(buildCardHead(task, buildCardRight(task, record, card)));
 
   let slider = null, fill = null, thumb = null, tooltip = null;
   if (!state.simpleMode) {
@@ -435,13 +455,15 @@ function buildTaskCard(task) {
     tooltip.style.left = percent + "%";
     slider.append(track, thumb, tooltip);
     area.append(slider);
-    card.append(area);
+    content.append(area);
   }
 
-  card.append(buildCardActions(task));
-  if (isInTouchMode) attachSwipeDelete(card, task);
+  content.append(buildCardActions(task));
+  card.append(swipeBg, content);
+
+  if (isInTouchMode) attachSwipe(content, editAction, deleteAction, task);
   if (slider && !record.done) {
-    attachSlider(slider, task, record, fill, thumb, tooltip, card.querySelector(".task-value"));
+    attachSlider(slider, task, record, fill, thumb, tooltip, content.querySelector(".task-value"));
   }
   return card;
 }
@@ -575,59 +597,63 @@ function attachSlider(slider,task,record,fill,thumb,tooltip,valueEl) {
   });
 }
 
-/* Swipe-to-delete for touch users – iOS-style slide-left to delete */
-function attachSwipeDelete(card,task) {
-  const slider = card.querySelector(".slider");
-  let startX=null;
-  let currentDx=0;
+/* Touch gestures: swipe left reveals the bin, swipe right reveals the pencil. */
+function attachSwipe(content, editAction, deleteAction, task) {
+  const slider = content.querySelector(".slider");
+  let startX = null, startY = null, axis = null;
 
-  card.addEventListener("touchstart",e=>{
-    if(!isInTouchMode) return;
-    // Don't hijack touches that start on the slider (value adjustment)
-    if (slider && slider.contains(e.target)) { startX=null; return; }
-    startX=e.touches[0].clientX;
-    currentDx=0;
-    card.style.transition="none";
-  });
+  content.addEventListener("touchstart", e => {
+    // Let the slider keep its own gestures.
+    if (slider && slider.contains(e.target)) { startX = null; return; }
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    axis = null;
+    content.style.transition = "none";
+  }, { passive: true });
 
-  card.addEventListener("touchmove",e=>{
-    if(startX===null) return;
-    const dx=e.touches[0].clientX-startX;
-    if (dx > 0) { // only allow left swipe
-      currentDx=0;
-      card.style.transform="translateX(0)";
-      return;
+  content.addEventListener("touchmove", e => {
+    if (startX === null) return;
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+    if (axis === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+      axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
     }
-    currentDx = Math.max(dx, -90);
-    card.style.transform=`translateX(${currentDx}px)`;
-    // reveal delete affordance via background color
-    const progress = Math.min(1, Math.abs(currentDx)/90);
-    card.style.backgroundColor = progress > 0.6 ? "#fee2e2" : "";
-  });
+    if (axis !== "x") return;
+    const offset = clamp(dx, -110, 110);
+    content.style.transform = `translateX(${offset}px)`;
+    const progress = String(Math.min(1, Math.abs(offset) / 60));
+    deleteAction.style.opacity = offset < 0 ? progress : "0";
+    editAction.style.opacity = offset > 0 ? progress : "0";
+  }, { passive: true });
 
-  function endSwipe(e) {
-    if(startX===null) return;
-    const dx = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0].clientX - startX : currentDx;
-    startX=null;
-    card.style.transition="transform .2s ease, background-color .2s";
+  function finish(e) {
+    if (startX === null) return;
+    const touch = e.changedTouches && e.changedTouches[0];
+    const dx = touch ? touch.clientX - startX : 0;
+    startX = null; startY = null; axis = null;
+    content.style.transition = "transform .2s ease";
+
     if (dx < -60) {
-      // slide out then delete
-      card.style.transform="translateX(-100%)";
-      card.style.opacity="0";
+      content.style.transform = "translateX(-110%)";
+      deleteAction.style.opacity = "1";
       setTimeout(() => {
-        state.tasks=state.tasks.filter(t=>t.id!==task.id);
+        state.tasks = state.tasks.filter(t => t.id !== task.id);
         save();
         renderTasks();
       }, 200);
+    } else if (dx > 60) {
+      content.style.transform = "translateX(0)";
+      editAction.style.opacity = "0";
+      setTimeout(() => openModal("edit", task), 120);
     } else {
-      card.style.transform="translateX(0)";
-      card.style.backgroundColor="";
-      card.style.opacity="";
+      content.style.transform = "translateX(0)";
+      editAction.style.opacity = "0";
+      deleteAction.style.opacity = "0";
     }
   }
 
-  card.addEventListener("touchend",endSwipe);
-  card.addEventListener("touchcancel",endSwipe);
+  content.addEventListener("touchend", finish);
+  content.addEventListener("touchcancel", finish);
 }
 
 /* Weekly history */
@@ -645,8 +671,8 @@ function weekScores(date) {
   return scores;
 }
 
-function makeSparkline(scores) {
-  const width=560,height=82,pad=7;
+function makeSparkline(scores, width) {
+  const height=82,pad=9;
   const max=Math.max(1,...scores.map(s=>s.score));
   const points=scores.map((s,i)=>({
     x:pad+i*((width-pad*2)/6),
@@ -667,7 +693,9 @@ function makeSparkline(scores) {
     `<circle class="chart-dot" cx="${p.x}" cy="${p.y}" r="4"/>`
   ).join("");
 
-  return `<svg class="chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Daglige point: ${scores.map(s=>s.label+" "+format(s.score)).join(", ")}">
+  // The viewBox matches the rendered pixel size, so dots stay perfectly round
+  // even on narrow screens.
+  return `<svg class="chart" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Daglige point: ${scores.map(s=>s.label+" "+format(s.score)).join(", ")}">
     <path class="chart-line" d="${path}"/>${dots}
   </svg>`;
 }
@@ -678,26 +706,66 @@ function firstWeekKey() {
   return keys.length ? weekKey(dateFromKey(keys[0])) : weekKey(new Date());
 }
 
+function firstDataDate() {
+  const keys=Object.keys(state.days).sort();
+  return keys.length ? dateFromKey(keys[0]) : new Date();
+}
+
+function monthIndex(date) {
+  return date.getFullYear()*12+date.getMonth();
+}
+function monthStart(date) {
+  return new Date(date.getFullYear(),date.getMonth(),1,12);
+}
+function addMonths(date,count) {
+  return new Date(date.getFullYear(),date.getMonth()+count,1,12);
+}
+function endOfMonth(date) {
+  return new Date(date.getFullYear(),date.getMonth()+1,0,12);
+}
+
+// Offset 0 covers this month and the two before it. Each step moves the whole
+// three-month window back; the oldest data decides how far back you can go.
+function periodRange(offset=historyOffset) {
+  const end=addMonths(monthStart(new Date()),-offset*WINDOW_MONTHS);
+  return { start:addMonths(end,-(WINDOW_MONTHS-1)), end, lastDay:endOfMonth(end) };
+}
+
+function maxHistoryOffset() {
+  const nowIdx=monthIndex(new Date());
+  const firstIdx=monthIndex(firstDataDate());
+  return Math.max(0,Math.ceil((nowIdx-(WINDOW_MONTHS-1)-firstIdx)/WINDOW_MONTHS));
+}
+
+function periodLabel(start,end) {
+  const fmt=new Intl.DateTimeFormat("da-DK",{month:"short"});
+  const first=fmt.format(start).replace(".","");
+  const last=fmt.format(end).replace(".","");
+  return start.getFullYear()===end.getFullYear()
+    ? first+" – "+last+" "+end.getFullYear()
+    : first+" "+start.getFullYear()+" – "+last+" "+end.getFullYear();
+}
+
 function renderHistory() {
   const list=$("week-list");
   list.replaceChildren();
 
-  const currentKey=weekKey(new Date());
+  const max=maxHistoryOffset();
+  historyOffset=clamp(historyOffset,0,max);
+  const {start,end,lastDay}=periodRange();
+  $("history-range").textContent=periodLabel(start,end);
+  $("history-prev").disabled=historyOffset>=max;
+  $("history-next").disabled=historyOffset<=0;
+
   const startWeek=firstWeekKey();
-  if(selectedWeek<startWeek) selectedWeek=startWeek;
-  if(selectedWeek>currentKey) selectedWeek=currentKey;
+  // Match the SVG pixel size to its viewBox so dots stay round on any width.
+  const chartWidth=Math.max(200,(list.clientWidth||320)-36);
 
-  const selectedDate=weekStartFromKey(selectedWeek);
-  $("week-current").textContent=weekLabel(selectedDate);
-
-  $("week-next").disabled=selectedWeek>=currentKey;
-  $("week-prev").disabled=selectedWeek<=startWeek;
-
-  // Show every week from the start week up to the selected week.
-  // Empty weeks in between are kept; weeks before the user started are not.
-  const startMonday=weekStartFromKey(startWeek);
+  const endMonday=mondayOfWeek(lastDay);
+  const startMonday=mondayOfWeek(start);
   let index=0;
-  for(let date=selectedDate;date>=startMonday;date=addDays(date,-7)) {
+  for(let date=endMonday;date>=startMonday;date=addDays(date,-7)) {
+    if(weekKey(date)<startWeek) continue;
     const scores=weekScores(date);
     const total=scores.reduce((sum,s)=>sum+s.score,0);
 
@@ -716,7 +784,7 @@ function renderHistory() {
     head.append(id,sum);
 
     card.append(head);
-    card.insertAdjacentHTML("beforeend",makeSparkline(scores));
+    card.insertAdjacentHTML("beforeend",makeSparkline(scores,chartWidth));
 
     const labels=document.createElement("div");
     labels.className="chart-labels";
@@ -738,22 +806,20 @@ function renderHistory() {
   }
 }
 
-function weekStartFromKey(key) {
-  const match=key.match(/^(\d{4})-W(\d{2})$/);
-  const year=Number(match[1]),week=Number(match[2]);
-  const jan4=new Date(year,0,4,12);
-  const monday=mondayOfWeek(jan4);
-  return addDays(monday,(week-1)*7);
-}
-
-function changeWeek(amount) {
-  const next=addDays(weekStartFromKey(selectedWeek),amount*7);
-  const nextKey=weekKey(next);
-  const startWeek=firstWeekKey();
-  if(nextKey<startWeek || nextKey>weekKey(new Date())) return;
-  selectedWeek=nextKey;
+function changePeriod(amount) {
+  const next=clamp(historyOffset+amount,0,maxHistoryOffset());
+  if(next===historyOffset) return;
+  historyOffset=next;
   renderHistory();
 }
+
+// Re-measure the charts when the window changes size.
+let historyResizeTimer=null;
+window.addEventListener("resize",()=>{
+  if($("history-view").hidden) return;
+  clearTimeout(historyResizeTimer);
+  historyResizeTimer=setTimeout(renderHistory,120);
+});
 
 /* Navigation */
 function showView(view) {
@@ -764,7 +830,7 @@ function showView(view) {
   });
   $("add-button").hidden=view!=="today";
   if(view==="history") {
-    selectedWeek=weekKey(new Date());
+    historyOffset=0;
     renderHistory();
   }
 }
@@ -772,8 +838,8 @@ function showView(view) {
 document.querySelectorAll(".tab").forEach(tab=>{
   tab.addEventListener("click",()=>showView(tab.dataset.view));
 });
-$("week-prev").addEventListener("click",()=>changeWeek(-1));
-$("week-next").addEventListener("click",()=>changeWeek(1));
+$("history-prev").addEventListener("click",()=>changePeriod(1));
+$("history-next").addEventListener("click",()=>changePeriod(-1));
 // Logging is an explicit action: completed cards stay visible until this is tapped.
 $("log-completed").addEventListener("click",()=>{
   const day=state.days[currentDate] || {};
@@ -789,6 +855,10 @@ $("log-completed").addEventListener("click",()=>{
 $("show-logged").addEventListener("click",()=>{
   showLogged=!showLogged;
   renderTasks();
+});
+
+$("update-ok").addEventListener("click",()=>{
+  $("update-overlay").classList.add("hidden");
 });
 
 /* Modal system (reused for create, edit and settings) */
@@ -832,7 +902,10 @@ $("overlay").addEventListener("click", e => {
   if (e.target === $("overlay")) closeModal();
 });
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape") closeModal();
+  if (e.key === "Escape") {
+    closeModal();
+    $("update-overlay").classList.add("hidden");
+  }
   if (e.key === "Enter" && (currentModal === "create" || currentModal === "edit")) {
     e.preventDefault();
     submitTask();
@@ -1072,6 +1145,7 @@ function importData(file) {
       state.simpleMode = !!state.simpleMode;
       if (!state.theme) state.theme = "light";
       if (state.sound === undefined) state.sound = true;
+      state.appVersion = APP_VERSION;
       save();
       applyTheme();
       renderTasks();
@@ -1139,9 +1213,11 @@ function renderSettingsForm(body) {
   modeRow.className = "toggle-row";
   const modeText = document.createElement("span");
   modeText.className = "toggle-label";
+  // "Tjekliste" describes the experience better than "kun kryds": the points
+  // are fixed and the daily job is simply to check tasks off.
   const MODE_LABELS = {
-    standard: "Vurdering med skyder",
-    simple: "Kun kryds (fuldt beløb)"
+    standard: "Med skyder",
+    simple: "Tjekliste"
   };
   modeText.textContent = state.simpleMode ? MODE_LABELS.simple : MODE_LABELS.standard;
   const modeToggle = document.createElement("button");
@@ -1155,8 +1231,11 @@ function renderSettingsForm(body) {
     modeText.textContent = state.simpleMode ? MODE_LABELS.simple : MODE_LABELS.standard;
     renderTasks();
   });
+  const modeHint = document.createElement("div");
+  modeHint.className = "hint";
+  modeHint.textContent = "Tjekliste giver faste point med ét tryk. Med skyder kan du give point efter indsats.";
   modeRow.append(modeText, modeToggle);
-  modeField.append(modeLabel, modeRow);
+  modeField.append(modeLabel, modeRow, modeHint);
 
   // Data backup
   const dataField = document.createElement("div");
@@ -1193,7 +1272,11 @@ function renderSettingsForm(body) {
   saveBtn.textContent = "Gem indstillinger";
   saveBtn.addEventListener("click", closeModal);
 
-  body.append(themeField, soundField, modeField, dataField, saveBtn);
+  const versionLine = document.createElement("div");
+  versionLine.className = "version-line";
+  versionLine.textContent = "Little Wins · " + VERSION_LABEL;
+
+  body.append(themeField, soundField, modeField, dataField, versionLine, saveBtn);
 }
 
 /* Sound toggle moved to settings modal */
@@ -1215,8 +1298,20 @@ document.addEventListener("visibilitychange",()=>{
 window.addEventListener("focus",checkDate);
 setInterval(checkDate,60000);
 
+// Show the "what's new" notice once, only when an existing install moves to a
+// new app version. Fresh installs are silent – there was nothing to update from.
+function handleVersionOnLoad() {
+  if (isFreshInstall || state.appVersion === APP_VERSION) {
+    state.appVersion = APP_VERSION;
+    return;
+  }
+  state.appVersion = APP_VERSION;
+  $("update-overlay").classList.remove("hidden");
+}
+
 /* Initialisation */
 applyTheme();
+handleVersionOnLoad();
 ensureToday();
 renderTasks();
 
