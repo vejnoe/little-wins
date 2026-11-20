@@ -38,6 +38,6 @@ Kendte fejl, begrænsninger og faldgruber. Opdateret 20. nov. 2026.
   single-klippet preloades og indgår i de fem lydvarianter. Beholdt indtil andet besluttes.
 
 ## Ikke fuldført
-- Ingen testautomatisering eller CI.
-- Ingen server-side backup ud over manuel JSON-eksport/import.
+- Let preflight i CI (se `.github/workflows/deploy.yml`), men ingen rigtig testsuite.
+- Ingen server-side backup ud over manuel JSON-eksport/import. Se `DEPLOYMENT.md` for deploy og rollback.
 - Ingen designkilde (Figma) i repoet — designet vedligeholdes direkte via CSS-tokens.

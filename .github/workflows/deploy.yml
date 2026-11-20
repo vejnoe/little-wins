@@ -1,0 +1,67 @@
+name: Deploy to wins.vejnoe.dk
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Preflight checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check JavaScript syntax
+        run: node --check app.js
+
+      - name: Validate manifest
+        run: python3 -m json.tool manifest.json > /dev/null
+
+      - name: Check referenced assets exist
+        run: node .github/scripts/check-assets.js
+
+      - name: Guard storage and cache names
+        run: |
+          grep -q 'little_wins_v1' app.js
+          grep -q 'wins-v1' sw.js
+          if grep -Eq 'little_wins_v[23]|wins-v[23]' app.js sw.js; then
+            echo 'Storage/cache name bumped — keep the v1 names per AGENTS.md' >&2
+            exit 1
+          fi
+
+  deploy:
+    name: Deploy over SSH
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deploy key and known hosts
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
+
+      - name: Rsync to web root
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+        run: |
+          rsync -rlptz --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude '.DS_Store' \
+            --exclude 'AGENTS.md' \
+            --exclude 'KNOWN-ISSUES.md' \
+            -e "ssh -i ~/.ssh/id_deploy -p $SSH_PORT -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes" \
+            ./ "$SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/"
