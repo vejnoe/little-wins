@@ -1,6 +1,8 @@
 # AGENTS.md — Little Wins
 
 Kendte fejl, begrænsninger og test-faldgruber står i `KNOWN-ISSUES.md`.
+Server, SSH-nøgler, secrets, deploy og rollback står i `DEPLOYMENT.md`.
+Branches, worktrees og release-flow står i `GIT-WORKFLOW.md`.
 
 ## Produktet
 Installerbar PWA til daglige "små sejre" med point. Dansk UI, datoer som `onsdag 18. nov.`.
