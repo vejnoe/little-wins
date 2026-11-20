@@ -15,7 +15,7 @@ const VERSIONS = [
       "Gennemførte opgaver bliver liggende på deres plads, indtil du logger dem",
       "Stryg kræver nu en klar vandret bevægelse — skrå scroll sletter ikke ved et uheld",
       "Toggles er gule ligesom resten af designet",
-      "Gentagelses-label viser nu det fulde navn, fx »Gentag hver 3. dag«"
+      "Gentagelses-label viser igen tal — hold musen hen over det for fuld tekst"
     ]
   },
   {
@@ -443,16 +443,27 @@ function renderHeader(animateFrom=null) {
 }
 
 /* Today's task list */
-// One source of truth for the repeat wording — used on cards, in the form and
-// for the accessible name, so the small badge carries the full, final label.
+// Natural Danish ordinals for the hover text. Past 10 the numeric form
+// ("hver 11. dag") is the idiomatic spelling, so it is used as the fallback.
+const REPEAT_ORDINAL = [
+  "", "første", "anden", "tredje", "fjerde", "femte",
+  "sjette", "syvende", "ottende", "niende", "tiende"
+];
+
+// One source of truth for the full wording — hover text, accessible name and
+// the form's value display all read the same natural phrase.
 function repeatTitle(days) {
   if (!days) return "Gentager ikke";
-  return days === 1 ? "Gentag hver dag" : "Gentag hver " + days + ". dag";
+  if (days === 1) return "Gentager hver dag";
+  const ordinal = REPEAT_ORDINAL[days];
+  return ordinal
+    ? "Gentager hver " + ordinal + " dag"
+    : "Gentager hver " + days + ". dag";
 }
 
-// The card badge keeps the circular arrow in front of the full label.
+// The card badge stays compact; the full wording lives in title/aria-label.
 function repeatBadge(days) {
-  return "↻ " + repeatTitle(days);
+  return days === 1 ? "↻" : "↻ " + days;
 }
 
 function buildCardHead(task, right) {
