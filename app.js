@@ -450,6 +450,11 @@ function repeatTitle(days) {
   return days === 1 ? "Gentag hver dag" : "Gentag hver " + days + ". dag";
 }
 
+// The card badge keeps the circular arrow in front of the full label.
+function repeatBadge(days) {
+  return "↻ " + repeatTitle(days);
+}
+
 function buildCardHead(task, right) {
   const head = document.createElement("div");
   head.className = "card-head";
@@ -465,7 +470,7 @@ function buildCardHead(task, right) {
   if (days) {
     const badge = document.createElement("span");
     badge.className = "recurring-badge";
-    badge.textContent = repeatTitle(days);
+    badge.textContent = repeatBadge(days);
     badge.title = repeatTitle(days);
     badge.setAttribute("aria-label", repeatTitle(days));
     left.append(badge);
