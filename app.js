@@ -14,7 +14,8 @@ const VERSIONS = [
     changes: [
       "Gennemførte opgaver bliver liggende på deres plads, indtil du logger dem",
       "Stryg kræver nu en klar vandret bevægelse — skrå scroll sletter ikke ved et uheld",
-      "Toggles er gule ligesom resten af designet"
+      "Toggles er gule ligesom resten af designet",
+      "Gentagelses-label viser nu det fulde navn, fx »Gentag hver 3. dag«"
     ]
   },
   {
@@ -442,13 +443,10 @@ function renderHeader(animateFrom=null) {
 }
 
 /* Today's task list */
-function repeatLabel(days) {
-  if (!days) return "";
-  return days === 1 ? "↻" : "↻ " + days;
-}
-
+// One source of truth for the repeat wording — used on cards, in the form and
+// for the accessible name, so the small badge carries the full, final label.
 function repeatTitle(days) {
-  if (!days) return "";
+  if (!days) return "Gentager ikke";
   return days === 1 ? "Gentag hver dag" : "Gentag hver " + days + ". dag";
 }
 
@@ -467,10 +465,9 @@ function buildCardHead(task, right) {
   if (days) {
     const badge = document.createElement("span");
     badge.className = "recurring-badge";
-    badge.textContent = repeatLabel(days);
-    const label = repeatTitle(days);
-    badge.title = label;
-    badge.setAttribute("aria-label", label);
+    badge.textContent = repeatTitle(days);
+    badge.title = repeatTitle(days);
+    badge.setAttribute("aria-label", repeatTitle(days));
     left.append(badge);
   }
 
@@ -965,12 +962,6 @@ document.addEventListener("keydown", e => {
 });
 
 /* Shared task form – used for both create and edit */
-function repeatValueLabel(days) {
-  if (!days) return "Gentager ikke";
-  return days === 1 ? "Hver dag" : "Hver " + days + ". dag";
-}
-
-/* Shared task form – used for both create and edit */
 function renderTaskForm(body, task = null) {
   const MIN = 1000;
   const MAX = 1000000;
@@ -1013,7 +1004,7 @@ function renderTaskForm(body, task = null) {
     value: createRepeatDays,
     ariaLabel: "Gentagelse",
     formatTooltip: v => String(v),
-    formatValue: repeatValueLabel,
+    formatValue: repeatTitle,
     onChange: v => { createRepeatDays = v; }
   });
   const repeatField = document.createElement("div");

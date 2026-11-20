@@ -212,7 +212,9 @@ header {
   text-transform:uppercase;letter-spacing:.3px;overflow-wrap:anywhere;
 }
 .recurring-badge {
-  flex:none;font-size:15px;line-height:1;color:var(--color-muted);font-weight:700;
+  flex:none;max-width:100px;font-size:var(--text-xs);line-height:1.25;
+  color:var(--color-muted);font-weight:var(--weight-bold);
+  text-align:right;overflow-wrap:anywhere;
 }
 .completed .task-title {color:var(--color-faded);text-decoration:line-through}
 .task-right {display:flex;align-items:center;gap:11px}
