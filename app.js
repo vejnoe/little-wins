@@ -790,7 +790,10 @@ function endOfMonth(date) {
 // three-month window back; the oldest data decides how far back you can go.
 function periodRange(offset=historyOffset) {
   const end=addMonths(monthStart(new Date()),-offset*WINDOW_MONTHS);
-  return { start:addMonths(end,-(WINDOW_MONTHS-1)), end, lastDay:endOfMonth(end) };
+  // The current window stops today: weeks that have not begun yet are not
+  // history, and the started week is the one shown as selected.
+  const lastDay=offset===0 ? new Date() : endOfMonth(end);
+  return { start:addMonths(end,-(WINDOW_MONTHS-1)), end, lastDay };
 }
 
 function maxHistoryOffset() {
