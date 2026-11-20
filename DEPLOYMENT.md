@@ -74,6 +74,7 @@ Sættes med `gh secret set <NAVN>` (eller i GitHub: Settings → Secrets and var
 
 ## Verifikation efter deploy
 
+- Første deploy kørte grønt 20. nov. 2026; `.git/` og `.github/` gav 404 via HTTP.
 - Actions-loggen grøn; `curl` på `https://wins.vejnoe.dk/manifest.json`, `/sw.js` og `/app.js`.
 - `.git/` og `.github/` må **ikke** være tilgængelige via HTTP.
 - PWA installeres, service worker registreres, lys/mørk og console uden fejl. Ved SW-opdatering:

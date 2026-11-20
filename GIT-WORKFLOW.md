@@ -51,5 +51,4 @@ og pushe `beta-3` i ro og mag.
   `gh_<version>_macOS_arm64.zip` fra GitHub *Releases* og læg binæren i `/usr/local/bin`.
 - Uden `gh` kan det samme gøres i browseren: opret repoet, tilføj en SSH-nøgle til GitHub-kontoen,
   og indtast secrets manuelt under *Settings → Secrets and variables → Actions*.
-- Planlagt repo: offentligt, navn `little-wins`, remote `origin`. (Oprettes i forbindelse med
-  første deploy — opdatér denne linje, når det er gjort.)
+- Repo: `https://github.com/vejnoe/little-wins` (offentligt), remote `origin`. Oprettet 20. nov. 2026.

@@ -63,6 +63,8 @@ jobs:
             --exclude '.git' \
             --exclude '.github' \
             --exclude '.DS_Store' \
+            --exclude '*.md' \
+            --exclude '.gitignore' \
             --exclude 'stats/' \
             --exclude '.htaccess' \
             --exclude 'AGENTS.md' \
