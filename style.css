@@ -227,8 +227,38 @@ header {
   transition:all var(--motion);
 }
 .done-button svg {width:16px;height:16px}
-.done-button:disabled {cursor:default}
+.done-button:disabled {cursor:default;opacity:.4}
 .completed .done-button {background:var(--color-ink);color:var(--color-surface)}
+
+.task-title-wrap.expandable {cursor:pointer}
+.subtask-count {
+  flex:none;font:700 var(--text-xs) var(--font-body);color:var(--color-muted);
+  background:var(--color-surface-muted);border-radius:var(--radius-pill);
+  padding:3px 7px;white-space:nowrap;
+}
+.subtask-chevron {
+  flex:none;font-size:var(--text-lg);color:var(--color-muted);
+  transition:transform var(--motion);
+}
+.subtask-chevron.open {transform:rotate(90deg)}
+.subtask-list {
+  border-top:1px solid var(--color-line);
+  margin-top:2px;padding-top:var(--space-2);
+}
+.subtask-row {
+  display:flex;align-items:center;gap:var(--space-2);
+  padding:6px 0;font-size:var(--text-sm);
+}
+.subtask-row + .subtask-row {border-top:1px solid var(--color-line)}
+.subtask-check {
+  flex:none;width:22px;height:22px;border:2px solid var(--color-line-strong);
+  border-radius:var(--radius-sm);background:var(--color-surface);
+  color:var(--color-ink);font-weight:var(--weight-bold);line-height:1;
+}
+.subtask-row.checked .subtask-check {background:var(--color-yellow);border-color:var(--color-ink)}
+.subtask-row.checked .subtask-title {color:var(--color-faded);text-decoration:line-through}
+.subtask-title {flex:1;min-width:0;overflow-wrap:anywhere;color:var(--color-ink-soft)}
+.subtask-share {flex:none;font-size:var(--text-xs);color:var(--color-muted)}
 
 /* 7. Sliders -------------------------------------------------------------- */
 .slider-area {position:relative;padding-top:2px}
@@ -384,6 +414,25 @@ footer {
 }
 .field input:focus {border-color:var(--color-ink)}
 .hint {font-size:var(--text-xs);color:var(--color-faded);margin-top:6px}
+.subtask-add-row {display:flex;gap:var(--space-2);margin-bottom:var(--space-2)}
+.subtask-add-row input {flex:1;min-width:0}
+.subtask-add-row .data-button {flex:0 0 auto;padding:10px 14px}
+.subtask-editor-list {display:flex;flex-direction:column;gap:var(--space-1)}
+.subtask-editor-row {
+  display:flex;align-items:center;gap:var(--space-2);
+  border:1px solid var(--color-line);border-radius:var(--radius-md);
+  padding:var(--space-2);background:var(--color-surface-subtle);
+}
+.subtask-editor-row.dragging {opacity:.6;border-color:var(--color-ink)}
+.subtask-drag {
+  flex:none;cursor:grab;touch-action:none;color:var(--color-muted);
+  font-size:var(--text-lg);line-height:1;
+}
+.subtask-editor-title {flex:1;min-width:0;overflow-wrap:anywhere;font-size:var(--text-sm)}
+.subtask-delete {
+  flex:none;border:0;background:transparent;color:var(--color-danger);
+  font-size:20px;line-height:1;padding:2px 6px;
+}
 .save-button {
   width:100%;border:2px solid var(--color-ink);border-radius:var(--radius-lg);
   background:var(--color-yellow);color:var(--color-ink);padding:14px;

@@ -17,7 +17,8 @@ const VERSIONS = [
       "Toggles er gule ligesom resten af designet",
       "Gentagelses-label viser igen tal — hold musen hen over det for fuld tekst",
       "Historikken viser kun uger, der er påbegyndt",
-      "»Installér« nederst på siden åbner nu en installationsdialog, der passer til din browser"
+      "»Installér« nederst på siden åbner nu en installationsdialog, der passer til din browser",
+      "Underopgaver: klik på en opgave for at folde den ud — point deles i lige andele"
     ]
   },
   {
@@ -91,6 +92,11 @@ function mondayOfWeek(date) {
 function clamp(value,min,max) {
   return Math.max(min,Math.min(max,value));
 }
+function makeId() {
+  return (crypto.randomUUID && typeof crypto.randomUUID === "function")
+    ? crypto.randomUUID()
+    : (Date.now().toString(36) + Math.random().toString(36).slice(2));
+}
 
 const MAX_REPEAT_DAYS = 30;
 
@@ -98,7 +104,7 @@ const MAX_REPEAT_DAYS = 30;
 // and add a step to MIGRATIONS for the previous version. Keep old steps for at
 // least three app versions: beta testers upgrade in place and must never lose
 // a single task or history record.
-const DATA_VERSION = 2;
+const DATA_VERSION = 3;
 const MIGRATIONS = {
   0: raw => {
     const tasks = (raw.tasks || []).map(t => {
@@ -139,7 +145,15 @@ const MIGRATIONS = {
     });
     const { simpleMode, ...rest } = raw;
     return { ...rest, tasks, days };
-  }
+  },
+  // Subtasks live on the task; daily checkmarks live in each day record under
+  // `subs`. Old tasks get an empty list, and no history record is touched.
+  2: raw => ({
+    ...raw,
+    tasks: raw.tasks.map(t =>
+      Array.isArray(t.subtasks) ? t : { ...t, subtasks: [] }
+    )
+  })
 };
 
 // Upgrade any saved state to the current schema. Nothing is ever discarded:
@@ -176,6 +190,10 @@ if(!state.theme) state.theme="light";
 let justCompletedId = null;
 // View-only: whether logged tasks from today are shown at the bottom of the list.
 let showLogged = false;
+// View-only: which task cards are folded out to show their subtasks.
+const expandedTasks = new Set();
+// A swipe must not also count as a tap that folds the card out.
+let swipeJustHappened = false;
 let currentDate = localDate();
 // History shows a three-month window; 0 = the most recent one.
 let historyOffset = 0;
@@ -247,9 +265,29 @@ function isLoggedToday(task) {
   return !!(record && record.done && record.archived);
 }
 
-// A task always awards its fixed point value, set when the task was created.
+// A task's total is fixed when it is created. Subtasks split it into equal
+// shares; the parent is always a share too and takes the rounding remainder.
 function freshValue(task) {
   return task.points;
+}
+function subtaskList(task) {
+  return Array.isArray(task.subtasks) ? task.subtasks : [];
+}
+function subtaskShare(task) {
+  return Math.floor(task.points / (subtaskList(task).length + 1));
+}
+function allSubtasksDone(task, record) {
+  const subs = subtaskList(task);
+  return subs.length > 0 && subs.every(s => record.subs && record.subs[s.id]);
+}
+function recordPoints(task, record) {
+  const subs = subtaskList(task);
+  if (!subs.length) return record.done ? record.value : 0;
+  const share = subtaskShare(task);
+  let total = subs.reduce((sum, s) =>
+    sum + (record.subs && record.subs[s.id] ? share : 0), 0);
+  if (record.done) total += task.points - share * subs.length;
+  return total;
 }
 
 function ensureToday() {
@@ -283,8 +321,11 @@ function entry(task,date=currentDate) {
 
 function dayTotal(date=currentDate) {
   const records = state.days[date] || {};
-  return Object.values(records).reduce((sum,r) =>
-    sum + (r.done ? r.value : 0),0);
+  const byId = new Map(state.tasks.map(t => [t.id, t]));
+  return Object.entries(records).reduce((sum,[id,r]) => {
+    const task = byId.get(id);
+    return sum + (task ? recordPoints(task, r) : (r.done ? r.value : 0));
+  }, 0);
 }
 
 function allTimeTotal() {
@@ -479,6 +520,25 @@ function buildCardHead(task, right) {
   title.textContent = task.title;
   left.append(title);
 
+  const subs = subtaskList(task);
+  if (subs.length) {
+    const count = document.createElement("span");
+    count.className = "subtask-count";
+    count.textContent = "☰ " + subs.length;
+    count.title = subs.length + " underopgaver";
+    const chevron = document.createElement("span");
+    chevron.className = "subtask-chevron" + (expandedTasks.has(task.id) ? " open" : "");
+    chevron.textContent = "›";
+    left.classList.add("expandable");
+    left.append(count, chevron);
+    left.addEventListener("click", () => {
+      if (swipeJustHappened) return;
+      if (expandedTasks.has(task.id)) expandedTasks.delete(task.id);
+      else expandedTasks.add(task.id);
+      renderTasks();
+    });
+  }
+
   const days = task.repeatDays || 0;
   if (days) {
     const badge = document.createElement("span");
@@ -528,11 +588,32 @@ function toggleDone(task, record, card) {
     record.done = false;
     record.archived = false;
   } else {
+    // The parent is the last share and cannot be taken before its subtasks.
+    const subs = subtaskList(task);
+    if (subs.length && !allSubtasksDone(task, record)) return;
     record.done = true;
     record.archived = false;
     record.value = task.points;
     justCompletedId = task.id;
-    animateCoins(card, record.value);
+    animateCoins(card, task.points - subtaskShare(task) * subs.length);
+  }
+  save();
+  renderTasks(before);
+}
+
+function toggleSubtask(task, record, subId, card) {
+  const before=dayTotal();
+  if (!record.subs) record.subs = {};
+  if (record.subs[subId]) {
+    delete record.subs[subId];
+    // An open subtask means the parent cannot be completed any more.
+    if (record.done) {
+      record.done = false;
+      record.archived = false;
+    }
+  } else {
+    record.subs[subId] = true;
+    animateCoins(card, subtaskShare(task));
   }
   save();
   renderTasks(before);
@@ -543,11 +624,16 @@ function buildCardRight(task, record, card) {
   right.className = "task-right";
   const value = document.createElement("span");
   value.className = "task-value num";
-  value.textContent = format(record.value);
+  value.textContent = format(recordPoints(task, record));
   const done = document.createElement("button");
   done.className = "done-button";
   done.type = "button";
-  done.setAttribute("aria-label", record.done ? "Fortryd gennemførelse" : "Markér som gennemført");
+  const pending = subtaskList(task).length > 0 && !record.done && !allSubtasksDone(task, record);
+  done.disabled = pending;
+  const label = pending ? "Kryds alle underopgaver af først"
+    : (record.done ? "Fortryd gennemførelse" : "Markér som gennemført");
+  done.title = label;
+  done.setAttribute("aria-label", label);
   done.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.5 5 5L19.5 6"/></svg>';
   done.addEventListener("click", () => toggleDone(task, record, card));
   right.append(value, done);
@@ -575,6 +661,34 @@ function buildTaskCard(task) {
   content.className = "task-content";
   content.append(buildCardHead(task, buildCardRight(task, record, card)));
   content.append(buildCardActions(task));
+  if (subtaskList(task).length && expandedTasks.has(task.id)) {
+    const list = document.createElement("div");
+    list.className = "subtask-list";
+    subtaskList(task).forEach(sub => {
+      const checked = !!(record.subs && record.subs[sub.id]);
+      const row = document.createElement("div");
+      row.className = "subtask-row" + (checked ? " checked" : "");
+      const check = document.createElement("button");
+      check.type = "button";
+      check.className = "subtask-check";
+      check.title = checked ? "Fortryd afkrydsning" : "Kryds underopgave af";
+      check.setAttribute("aria-label", check.title + ": " + sub.title);
+      check.textContent = checked ? "✓" : "";
+      check.addEventListener("click", e => {
+        e.stopPropagation();
+        toggleSubtask(task, record, sub.id, card);
+      });
+      const label = document.createElement("span");
+      label.className = "subtask-title";
+      label.textContent = sub.title;
+      const share = document.createElement("span");
+      share.className = "subtask-share num";
+      share.textContent = "+" + format(subtaskShare(task));
+      row.append(check, label, share);
+      list.append(row);
+    });
+    content.append(list);
+  }
   card.append(swipeBg, content);
 
   if (isInTouchMode) attachSwipe(content, editAction, deleteAction, task);
@@ -697,6 +811,10 @@ function attachSwipe(content, editAction, deleteAction, task) {
     startX = null; startY = null; axis = null; committed = false;
     content.style.transition = "transform .2s ease";
 
+    if (valid) {
+      swipeJustHappened = true;
+      setTimeout(() => { swipeJustHappened = false; }, 350);
+    }
     if (valid && dx < 0) {
       content.style.transform = "translateX(-110%)";
       deleteAction.style.opacity = "1";
@@ -934,6 +1052,7 @@ let currentModal = null;
 let editingTask = null;
 let createPoints = 1000;
 let createRepeatDays = 0;
+let createSubtasks = [];
 let submitting = false;
 
 const MODAL_TITLES = {
@@ -946,6 +1065,7 @@ const MODAL_TITLES = {
 function openModal(type, task = null) {
   currentModal = type;
   editingTask = (type === "edit") ? task : null;
+  createSubtasks = editingTask ? subtaskList(editingTask).map(s => ({ ...s })) : [];
   $("modal-title").textContent = MODAL_TITLES[type] || "";
   const body = $("modal-body");
   body.replaceChildren();
@@ -1018,7 +1138,7 @@ function renderTaskForm(body, task = null) {
   pointsLabel.textContent = "Point";
   const pointsHint = document.createElement("div");
   pointsHint.className = "hint";
-  pointsHint.textContent = "Opgaven giver altid dette beløb, når du sætter kryds.";
+  pointsHint.textContent = "Pointene fordeles på hovedopgaven og eventuelle underopgaver.";
   pointsField.append(pointsLabel, pointsControl.area, pointsControl.valueDisplay, pointsHint);
 
   createRepeatDays = task ? (task.repeatDays || 0) : 0;
@@ -1040,6 +1160,111 @@ function renderTaskForm(body, task = null) {
   repeatHint.textContent = "0 gentager ikke. Vælg antal dage for at få opgaven tilbage efter gennemførelse.";
   repeatField.append(repeatLabel, repeatControl.area, repeatControl.valueDisplay, repeatHint);
 
+  // Subtasks are edited here, on the parent task. On the card they can only be
+  // folded out and checked; sorting and deleting stays in this one place.
+  const subField = document.createElement("div");
+  subField.className = "field";
+  const subLabel = document.createElement("label");
+  subLabel.textContent = "Underopgaver";
+  const addRow = document.createElement("div");
+  addRow.className = "subtask-add-row";
+  const subInput = document.createElement("input");
+  subInput.id = "subtask-name";
+  subInput.maxLength = 60;
+  subInput.placeholder = "Ny underopgave";
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "data-button";
+  addBtn.textContent = "Tilføj";
+  addRow.append(subInput, addBtn);
+  const subList = document.createElement("div");
+  subList.className = "subtask-editor-list";
+  const subHint = document.createElement("div");
+  subHint.className = "hint";
+  subHint.textContent = "Hver underopgave og hovedopgaven får lige stor andel af pointene. Træk i håndtaget for at ændre rækkefølgen, og brug × for at slette.";
+  subField.append(subLabel, addRow, subList, subHint);
+
+  function paintSubtasks() {
+    subList.replaceChildren();
+    createSubtasks.forEach(sub => {
+      const row = document.createElement("div");
+      row.className = "subtask-editor-row";
+      row.dataset.id = sub.id;
+      const handle = document.createElement("span");
+      handle.className = "subtask-drag";
+      handle.textContent = "⠿";
+      handle.title = "Træk for at ændre rækkefølgen";
+      const name = document.createElement("span");
+      name.className = "subtask-editor-title";
+      name.textContent = sub.title;
+      const share = document.createElement("span");
+      share.className = "subtask-share num";
+      share.textContent = Math.round(100 / (createSubtasks.length + 1)) + "%";
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "subtask-delete";
+      del.textContent = "×";
+      del.title = "Slet underopgave";
+      del.setAttribute("aria-label", "Slet underopgave: " + sub.title);
+      del.addEventListener("click", () => {
+        createSubtasks = createSubtasks.filter(s => s.id !== sub.id);
+        paintSubtasks();
+      });
+      row.append(handle, name, share, del);
+      subList.append(row);
+    });
+  }
+
+  function addSubtask() {
+    const title = subInput.value.trim();
+    if (!title) return;
+    createSubtasks.push({ id: makeId(), title });
+    subInput.value = "";
+    paintSubtasks();
+    subInput.focus();
+  }
+  addBtn.addEventListener("click", addSubtask);
+  subInput.addEventListener("keydown", e => {
+    // Enter belongs to this field; the form's global Enter must not submit.
+    if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); addSubtask(); }
+  });
+
+  // Pointer events cover both mouse and touch; the handle alone owns the drag
+  // so the modal can still scroll normally everywhere else.
+  let dragging = null;
+  subList.addEventListener("pointerdown", e => {
+    const handle = e.target.closest(".subtask-drag");
+    if (!handle) return;
+    const row = handle.closest(".subtask-editor-row");
+    dragging = { row, id: row.dataset.id };
+    row.classList.add("dragging");
+    // Synthetic pointer events have no active pointer to capture.
+    try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  subList.addEventListener("pointermove", e => {
+    if (!dragging) return;
+    const target = [...subList.querySelectorAll(".subtask-editor-row:not(.dragging)")]
+      .find(row => {
+        const box = row.getBoundingClientRect();
+        return e.clientY < box.top + box.height / 2;
+      });
+    if (!target) return;
+    const from = createSubtasks.findIndex(s => s.id === dragging.id);
+    const to = createSubtasks.findIndex(s => s.id === target.dataset.id);
+    if (from < 0 || to < 0 || from === to) return;
+    const [item] = createSubtasks.splice(from, 1);
+    createSubtasks.splice(to, 0, item);
+    subList.insertBefore(dragging.row, target);
+  });
+  const endDrag = () => {
+    if (!dragging) return;
+    dragging.row.classList.remove("dragging");
+    dragging = null;
+  };
+  subList.addEventListener("pointerup", endDrag);
+  subList.addEventListener("pointercancel", endDrag);
+  paintSubtasks();
+
   const error = document.createElement("div");
   error.className = "error";
   error.id = "form-error";
@@ -1050,7 +1275,7 @@ function renderTaskForm(body, task = null) {
   saveBtn.textContent = task ? "Gem ændringer" : "Gem opgave";
   saveBtn.addEventListener("click", submitTask);
 
-  body.append(nameField, pointsField, repeatField, error, saveBtn);
+  body.append(nameField, pointsField, repeatField, subField, error, saveBtn);
 }
 
 function submitTask() {
@@ -1086,11 +1311,17 @@ function submitTask() {
         if (record && !record.done) record.value = points;
       });
     } else {
-      const id = (crypto.randomUUID && typeof crypto.randomUUID === "function")
-        ? crypto.randomUUID()
-        : (Date.now().toString(36) + Math.random().toString(36).slice(2));
-      task = { id, title, points, repeatDays };
+      task = { id: makeId(), title, points, repeatDays, subtasks: [] };
       state.tasks.push(task);
+    }
+    task.subtasks = createSubtasks.map(s => ({ ...s }));
+    // A deleted subtask must not keep awarding points from today's record.
+    const todayRecord = state.days[currentDate] && state.days[currentDate][task.id];
+    if (todayRecord && todayRecord.subs) {
+      const ids = new Set(task.subtasks.map(s => s.id));
+      Object.keys(todayRecord.subs).forEach(id => {
+        if (!ids.has(id)) delete todayRecord.subs[id];
+      });
     }
     ensureToday();
     entry(task);
