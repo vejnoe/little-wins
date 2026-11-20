@@ -17,7 +17,7 @@ const VERSIONS = [
       "Toggles er gule ligesom resten af designet",
       "Gentagelses-label viser igen tal — hold musen hen over det for fuld tekst",
       "Historikken viser kun uger, der er påbegyndt",
-      "Ny »Installér«-guide nederst på siden: sådan får du appen på hjemmeskærmen"
+      "»Installér« nederst på siden åbner nu en installationsdialog, der passer til din browser"
     ]
   },
   {
@@ -940,8 +940,7 @@ const MODAL_TITLES = {
   create: "Opret ny opgave",
   edit: "Rediger opgave",
   settings: "Indstillinger",
-  changelog: "Versionshistorik",
-  install: "Installér app"
+  changelog: "Versionshistorik"
 };
 
 function openModal(type, task = null) {
@@ -952,7 +951,6 @@ function openModal(type, task = null) {
   body.replaceChildren();
   if (type === "create" || type === "edit") renderTaskForm(body, task);
   else if (type === "changelog") renderChangelog(body);
-  else if (type === "install") renderInstallGuide(body);
   else renderSettingsForm(body);
   $("overlay").classList.remove("hidden");
   // focus first input if any
@@ -968,7 +966,9 @@ function closeModal() {
 }
 
 $("add-button").addEventListener("click", () => openModal("create"));
-$("install-button").addEventListener("click", () => openModal("install"));
+// The web component owns the install dialog; manual flags keep it closed until
+// this button is tapped, and its own translations cover the browser versions.
+$("install-button").addEventListener("click", () => $("pwa-install").showDialog());
 $("settings-button").addEventListener("click", () => openModal("settings"));
 $("close-modal").addEventListener("click", closeModal);
 $("overlay").addEventListener("click", e => {
@@ -1308,33 +1308,6 @@ function renderSettingsForm(body) {
   versionLine.textContent = "Little Wins · " + VERSION_LABEL;
 
   body.append(themeField, soundField, dataField, versionLine, saveBtn);
-}
-
-// Short, findable guide: saving the PWA on the home screen. Kept in the modal
-// system so beta testers see the same words everywhere.
-function renderInstallGuide(body) {
-  const intro = document.createElement("p");
-  intro.className = "hint";
-  intro.textContent = "Åbn wins.vejnoe.dk i browseren, og gør sådan her:";
-  body.append(intro);
-
-  const steps = [
-    ["iPhone (Safari)", "Tryk på Del-knappen nederst → Føj til hjemmeskærm."],
-    ["Android (Chrome)", "Tryk på ⋮ øverst til højre → Installér app / Føj til hjemmeskærm."],
-    ["Computer (Chrome eller Edge)", "Klik på installér-ikonet i adresselinjen."]
-  ];
-
-  steps.forEach(([device, how]) => {
-    const field = document.createElement("div");
-    field.className = "field";
-    const label = document.createElement("label");
-    label.textContent = device;
-    const hint = document.createElement("div");
-    hint.className = "hint";
-    hint.textContent = how;
-    field.append(label, hint);
-    body.append(field);
-  });
 }
 
 // Both the "what's new" popup and the footer history read from VERSIONS.

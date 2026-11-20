@@ -1,7 +1,11 @@
 {
+  "id": "./",
   "name": "Little Wins",
   "short_name": "Wins",
+  "description": "Små sejre med point — hver dag.",
+  "lang": "da",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#f7f6f2",

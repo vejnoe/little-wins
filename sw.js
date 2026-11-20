@@ -4,6 +4,7 @@ const ASSETS = [
   './index.html',
   './style.css',
   './app.js',
+  './vendor/pwa-install.bundle.js',
   './manifest.json',
   './sfx/super-mario-world-coin.mp3'
 ];
