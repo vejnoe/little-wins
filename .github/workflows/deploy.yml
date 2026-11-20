@@ -57,6 +57,8 @@ jobs:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
         run: |
+          # AWStats output and Apache config live on the server only.
+          # --exclude also protects them from --delete unless --delete-excluded is used.
           rsync -rlptz --delete \
             --exclude '.git' \
             --exclude '.github' \
