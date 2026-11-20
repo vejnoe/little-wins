@@ -32,8 +32,7 @@ Kendte fejl, begrænsninger og faldgruber. Opdateret 20. nov. 2026.
 
 ## Assets — nuværende status
 - `icon-192.png` (192×192), `icon-512.png` (512×512) og `happy-coin.png` (256×256) er regenereret
-  som korrekte PNG'er. De tidligere filer havde forkerke dimensioner/format.
-  **Disse ændringer ligger endnu ikke committet** — de er brugerens arbejde og skal ikke overskrives.
+  som korrekte PNG'er. De tidligere filer havde forkerke dimensioner/format. Ændringerne er committet.
 - Den gamle, ubrugte `coin.png` er slettet; der findes ingen tilbageværende referencer til den.
 - `sfx/super-mario-world-multiple-coins.mp3` ligger stadig i repoet, men **bruges ikke** — kun
   single-klippet preloades og indgår i de fem lydvarianter. Beholdt indtil andet besluttes.
