@@ -99,6 +99,8 @@ function makeId() {
 }
 
 const MAX_REPEAT_DAYS = 30;
+// One checkmark shape for the task button and its smaller subtask buttons.
+const CHECK_ICON = '<svg fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.5 5 5L19.5 6"/></svg>';
 
 // Saved-data schema. Bump DATA_VERSION whenever the shape of `state` changes
 // and add a step to MIGRATIONS for the previous version. Keep old steps for at
@@ -526,11 +528,8 @@ function buildCardHead(task, right) {
     count.className = "subtask-count";
     count.textContent = "☰ " + subs.length;
     count.title = subs.length + " underopgaver";
-    const chevron = document.createElement("span");
-    chevron.className = "subtask-chevron" + (expandedTasks.has(task.id) ? " open" : "");
-    chevron.textContent = "›";
     left.classList.add("expandable");
-    left.append(count, chevron);
+    left.append(count);
     left.addEventListener("click", () => {
       if (swipeJustHappened) return;
       if (expandedTasks.has(task.id)) expandedTasks.delete(task.id);
@@ -634,7 +633,7 @@ function buildCardRight(task, record, card) {
     : (record.done ? "Fortryd gennemførelse" : "Markér som gennemført");
   done.title = label;
   done.setAttribute("aria-label", label);
-  done.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.5 5 5L19.5 6"/></svg>';
+  done.innerHTML = CHECK_ICON;
   done.addEventListener("click", () => toggleDone(task, record, card));
   right.append(value, done);
   return right;
@@ -668,23 +667,23 @@ function buildTaskCard(task) {
       const checked = !!(record.subs && record.subs[sub.id]);
       const row = document.createElement("div");
       row.className = "subtask-row" + (checked ? " checked" : "");
-      const check = document.createElement("button");
-      check.type = "button";
-      check.className = "subtask-check";
-      check.title = checked ? "Fortryd afkrydsning" : "Kryds underopgave af";
-      check.setAttribute("aria-label", check.title + ": " + sub.title);
-      check.textContent = checked ? "✓" : "";
-      check.addEventListener("click", e => {
-        e.stopPropagation();
-        toggleSubtask(task, record, sub.id, card);
-      });
       const label = document.createElement("span");
-      label.className = "subtask-title";
+      label.className = "subtask-text";
       label.textContent = sub.title;
       const share = document.createElement("span");
       share.className = "subtask-share num";
       share.textContent = "+" + format(subtaskShare(task));
-      row.append(check, label, share);
+      const check = document.createElement("button");
+      check.type = "button";
+      check.className = "subtask-check" + (checked ? " checked" : "");
+      check.title = checked ? "Fortryd afkrydsning" : "Kryds underopgave af";
+      check.setAttribute("aria-label", check.title + ": " + sub.title);
+      check.innerHTML = CHECK_ICON;
+      check.addEventListener("click", e => {
+        e.stopPropagation();
+        toggleSubtask(task, record, sub.id, card);
+      });
+      row.append(label, share, check);
       list.append(row);
     });
     content.append(list);
@@ -1116,6 +1115,7 @@ function renderTaskForm(body, task = null) {
   nameLabel.textContent = "Opgavens navn";
   const nameInput = document.createElement("input");
   nameInput.id = "task-name";
+  nameLabel.htmlFor = "task-name";
   nameInput.maxLength = 60;
   nameInput.placeholder = "F.eks. Gåtur, Ryd op...";
   nameInput.required = true;
@@ -1124,21 +1124,23 @@ function renderTaskForm(body, task = null) {
 
   // One reusable slider control, used for both the points and the repeat interval.
   createPoints = task ? clamp(task.points, MIN, MAX) : MIN;
+  let subList = null; // Assigned below; the points slider repaints its shares.
   const pointsControl = makeRangeControl({
     min: MIN,
     max: MAX,
     value: createPoints,
     ariaLabel: "Point for opgaven",
     formatTooltip: v => format(v),
-    onChange: v => { createPoints = v; }
+    onChange: v => { createPoints = v; if (subList) paintSubtasks(); }
   });
   const pointsField = document.createElement("div");
   pointsField.className = "field";
-  const pointsLabel = document.createElement("label");
+  const pointsLabel = document.createElement("span");
+  pointsLabel.className = "field-label";
   pointsLabel.textContent = "Point";
   const pointsHint = document.createElement("div");
   pointsHint.className = "hint";
-  pointsHint.textContent = "Pointene fordeles på hovedopgaven og eventuelle underopgaver.";
+  pointsHint.textContent = "Det samlede beløb for opgaven.";
   pointsField.append(pointsLabel, pointsControl.area, pointsControl.valueDisplay, pointsHint);
 
   createRepeatDays = task ? (task.repeatDays || 0) : 0;
@@ -1153,53 +1155,60 @@ function renderTaskForm(body, task = null) {
   });
   const repeatField = document.createElement("div");
   repeatField.className = "field";
-  const repeatLabel = document.createElement("label");
+  const repeatLabel = document.createElement("span");
+  repeatLabel.className = "field-label";
   repeatLabel.textContent = "Gentagelse";
   const repeatHint = document.createElement("div");
   repeatHint.className = "hint";
   repeatHint.textContent = "0 gentager ikke. Vælg antal dage for at få opgaven tilbage efter gennemførelse.";
   repeatField.append(repeatLabel, repeatControl.area, repeatControl.valueDisplay, repeatHint);
 
-  // Subtasks are edited here, on the parent task. On the card they can only be
-  // folded out and checked; sorting and deleting stays in this one place.
+  // Subtasks are edited on the parent only. The input sits below the list so
+  // new rows appear above it, and Enter adds a row without saving the form.
   const subField = document.createElement("div");
   subField.className = "field";
-  const subLabel = document.createElement("label");
+  const subLabel = document.createElement("span");
+  subLabel.className = "field-label";
   subLabel.textContent = "Underopgaver";
+  subList = document.createElement("div");
+  subList.className = "subtask-editor-list";
   const addRow = document.createElement("div");
   addRow.className = "subtask-add-row";
   const subInput = document.createElement("input");
   subInput.id = "subtask-name";
+  subInput.setAttribute("aria-label", "Ny underopgave");
+  subInput.className = "subtask-text";
   subInput.maxLength = 60;
   subInput.placeholder = "Ny underopgave";
   const addBtn = document.createElement("button");
   addBtn.type = "button";
-  addBtn.className = "data-button";
-  addBtn.textContent = "Tilføj";
+  addBtn.className = "subtask-add";
+  addBtn.textContent = "+";
+  addBtn.title = "Tilføj underopgave";
+  addBtn.setAttribute("aria-label", "Tilføj underopgave");
   addRow.append(subInput, addBtn);
-  const subList = document.createElement("div");
-  subList.className = "subtask-editor-list";
   const subHint = document.createElement("div");
   subHint.className = "hint";
-  subHint.textContent = "Hver underopgave og hovedopgaven får lige stor andel af pointene. Træk i håndtaget for at ændre rækkefølgen, og brug × for at slette.";
-  subField.append(subLabel, addRow, subList, subHint);
+  subHint.textContent = "Point deles lige mellem underopgaver og hovedopgave. Træk for at ændre rækkefølgen.";
+  subField.append(subLabel, subList, addRow, subHint);
 
   function paintSubtasks() {
     subList.replaceChildren();
+    const share = format(Math.floor(createPoints / (createSubtasks.length + 1)));
     createSubtasks.forEach(sub => {
       const row = document.createElement("div");
       row.className = "subtask-editor-row";
       row.dataset.id = sub.id;
       const handle = document.createElement("span");
       handle.className = "subtask-drag";
-      handle.textContent = "⠿";
+      handle.textContent = "⋮⋮";
       handle.title = "Træk for at ændre rækkefølgen";
       const name = document.createElement("span");
-      name.className = "subtask-editor-title";
+      name.className = "subtask-text";
       name.textContent = sub.title;
-      const share = document.createElement("span");
-      share.className = "subtask-share num";
-      share.textContent = Math.round(100 / (createSubtasks.length + 1)) + "%";
+      const shareEl = document.createElement("span");
+      shareEl.className = "subtask-share num";
+      shareEl.textContent = "+" + share;
       const del = document.createElement("button");
       del.type = "button";
       del.className = "subtask-delete";
@@ -1210,7 +1219,7 @@ function renderTaskForm(body, task = null) {
         createSubtasks = createSubtasks.filter(s => s.id !== sub.id);
         paintSubtasks();
       });
-      row.append(handle, name, share, del);
+      row.append(handle, name, shareEl, del);
       subList.append(row);
     });
   }
@@ -1226,7 +1235,7 @@ function renderTaskForm(body, task = null) {
   addBtn.addEventListener("click", addSubtask);
   subInput.addEventListener("keydown", e => {
     // Enter belongs to this field; the form's global Enter must not submit.
-    if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); addSubtask(); }
+    if (e.key === "Enter") { e.preventDefault(); e.stopImmediatePropagation(); addSubtask(); }
   });
 
   // Pointer events cover both mouse and touch; the handle alone owns the drag
@@ -1235,31 +1244,29 @@ function renderTaskForm(body, task = null) {
   subList.addEventListener("pointerdown", e => {
     const handle = e.target.closest(".subtask-drag");
     if (!handle) return;
-    const row = handle.closest(".subtask-editor-row");
-    dragging = { row, id: row.dataset.id };
-    row.classList.add("dragging");
+    dragging = handle.closest(".subtask-editor-row");
+    dragging.classList.add("dragging");
     // Synthetic pointer events have no active pointer to capture.
     try { handle.setPointerCapture(e.pointerId); } catch (_) {}
   });
   subList.addEventListener("pointermove", e => {
     if (!dragging) return;
-    const target = [...subList.querySelectorAll(".subtask-editor-row:not(.dragging)")]
-      .find(row => {
-        const box = row.getBoundingClientRect();
-        return e.clientY < box.top + box.height / 2;
-      });
-    if (!target) return;
-    const from = createSubtasks.findIndex(s => s.id === dragging.id);
-    const to = createSubtasks.findIndex(s => s.id === target.dataset.id);
-    if (from < 0 || to < 0 || from === to) return;
-    const [item] = createSubtasks.splice(from, 1);
-    createSubtasks.splice(to, 0, item);
-    subList.insertBefore(dragging.row, target);
+    const others = [...subList.querySelectorAll(".subtask-editor-row:not(.dragging)")];
+    const before = others.find(row => {
+      const box = row.getBoundingClientRect();
+      return e.clientY < box.top + box.height / 2;
+    });
+    if (before) subList.insertBefore(dragging, before);
+    else if (others.length) subList.append(dragging); // Past the last row.
   });
   const endDrag = () => {
     if (!dragging) return;
-    dragging.row.classList.remove("dragging");
+    dragging.classList.remove("dragging");
     dragging = null;
+    // The DOM is the order; read it back once instead of juggling indices.
+    createSubtasks = [...subList.querySelectorAll(".subtask-editor-row")]
+      .map(row => createSubtasks.find(s => s.id === row.dataset.id))
+      .filter(Boolean);
   };
   subList.addEventListener("pointerup", endDrag);
   subList.addEventListener("pointercancel", endDrag);
