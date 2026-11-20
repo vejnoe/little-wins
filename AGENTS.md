@@ -20,9 +20,11 @@ service worker-cachen hedder `wins-v1`. Der findes **aktive beta-testere**.
   fem varianter med pitch og lag ud fra det samme `coinCount()`, der styrer partiklerne.
 - Point er en fast værdi pr. opgave (`points`), sat ved oprettelse/redigering. Der findes **ikke**
   en daglig skyder og ingen visningstilstand. Underopgaver (`task.subtasks`, hver med `id` og `title`)
-  deler beløbet i lige andele; hovedopgaven er altid en andel og får afrundingsresten, og kan først
-  krydses af når alle underopgaver er checket. Dagens afkrydsninger gemmes i `record.subs` og
-  nulstilles med dagen. Der er kun ét niveau — ingen indlejring og ingen træk mellem opgaver.
+  er de **eneste** andele — der findes ingen hoved-checkbox. To underopgaver = to ting at løse.
+  Overskuddet ved afrunding gives til de første underopgaver, så alle krydser tilsammen giver
+  præcis opgavens beløb. Opgaven er færdig, når alle underopgaver er checket (`record.done` sættes
+  automatisk). Dagens afkrydsninger gemmes i `record.subs` og nulstilles med dagen. Der er kun ét
+  niveau — ingen indlejring og ingen træk mellem opgaver.
 
 ## Koderegler
 1. **Én kilde til sandhed.** Farver, fonte, størrelser og release notes defineres ét sted

@@ -233,20 +233,33 @@ header {
 .done-button:disabled {cursor:default;opacity:.4}
 .completed .done-button,.subtask-check.checked {background:var(--color-ink);color:var(--color-surface)}
 
-.task-title-wrap.expandable {cursor:pointer}
-.subtask-count {
-  flex:none;font:700 var(--text-xs) var(--font-body);color:var(--color-muted);
-  background:var(--color-surface-muted);border-radius:var(--radius-pill);
-  padding:3px 7px;white-space:nowrap;
+.task-content.expandable {cursor:pointer}
+
+/* Count circle and one dot per subtask stand in for the parent checkbox.
+   On open the dots drop into the rows as the real checkboxes. */
+.subtask-indicator {
+  display:flex;align-items:center;gap:var(--space-2);flex-shrink:0;
 }
-.subtask-list {
-  border-top:1px solid var(--color-line);
-  margin-top:2px;padding-top:var(--space-2);
+.subtask-count-circle {
+  width:30px;height:30px;border:2px solid var(--color-ink);
+  border-radius:var(--radius-pill);display:grid;place-items:center;
+  font-size:var(--text-sm);font-weight:var(--weight-bold);color:var(--color-ink);
 }
+.completed .subtask-count-circle {background:var(--color-ink);color:var(--color-surface)}
+.subtask-dots {display:flex;align-items:center;gap:5px}
+.subtask-dot {
+  width:11px;height:11px;border:2px solid var(--color-line-strong);
+  border-radius:var(--radius-pill);background:var(--color-surface);
+}
+.subtask-dot.checked {background:var(--color-ink);border-color:var(--color-ink)}
+.subtask-indicator.expanded .subtask-dots {display:none}
+
+.subtask-list {margin-top:var(--space-2)}
 .subtask-row {
-  display:flex;align-items:center;gap:var(--space-2);padding:5px 0;
+  display:flex;align-items:center;gap:var(--space-2);
+  padding:8px var(--space-2);margin:0 calc(var(--space-2) * -1);
 }
-.subtask-row + .subtask-row {border-top:1px solid var(--color-line)}
+.subtask-row:nth-child(odd) {background:var(--color-surface-subtle)}
 .subtask-text {
   flex:1;min-width:0;overflow-wrap:anywhere;
   font:500 var(--text-sm) var(--font-body);color:var(--color-ink-soft);
@@ -255,6 +268,14 @@ header {
 .subtask-text::placeholder {color:var(--color-faded)}
 .subtask-row.checked .subtask-text {color:var(--color-faded);text-decoration:line-through}
 .subtask-share {flex:none;font-size:var(--text-xs);color:var(--color-muted)}
+.subtask-check {
+  animation:dot-drop var(--motion) both;
+  animation-delay:calc(var(--i,0) * 45ms);
+}
+@keyframes dot-drop {
+  from {opacity:0;transform:translateY(-12px)}
+  to {opacity:1;transform:translateY(0)}
+}
 
 /* 7. Sliders -------------------------------------------------------------- */
 .slider-area {position:relative;padding-top:2px}

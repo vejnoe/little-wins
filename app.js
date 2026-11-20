@@ -18,7 +18,7 @@ const VERSIONS = [
       "Gentagelses-label viser igen tal — hold musen hen over det for fuld tekst",
       "Historikken viser kun uger, der er påbegyndt",
       "»Installér« nederst på siden åbner nu en installationsdialog, der passer til din browser",
-      "Underopgaver: klik på en opgave for at folde den ud — point deles i lige andele"
+      "Underopgaver: klik på kortet for at folde ud — hver underopgave er sin egen pointandel"
     ]
   },
   {
@@ -106,7 +106,7 @@ const CHECK_ICON = '<svg fill="none" stroke="currentColor" stroke-width="3.5" vi
 // and add a step to MIGRATIONS for the previous version. Keep old steps for at
 // least three app versions: beta testers upgrade in place and must never lose
 // a single task or history record.
-const DATA_VERSION = 3;
+const DATA_VERSION = 4;
 const MIGRATIONS = {
   0: raw => {
     const tasks = (raw.tasks || []).map(t => {
@@ -155,7 +155,27 @@ const MIGRATIONS = {
     tasks: raw.tasks.map(t =>
       Array.isArray(t.subtasks) ? t : { ...t, subtasks: [] }
     )
-  })
+  }),
+  // The parent is no longer a point share or a checkbox: a task is done exactly
+  // when all its subtasks are checked. Re-derive `done` from the saved checkmarks
+  // so old beta data keeps the same completed days; history records survive.
+  3: raw => {
+    const validIds = Object.fromEntries(raw.tasks.map(t =>
+      [t.id, new Set((t.subtasks || []).map(s => s.id))]));
+    const days = {};
+    Object.entries(raw.days).forEach(([key, day]) => {
+      const next = {};
+      Object.entries(day).forEach(([id, record]) => {
+        const ids = validIds[id];
+        if (!ids || !record.subs) { next[id] = record; return; }
+        const subs = {};
+        Object.keys(record.subs).forEach(sid => { if (ids.has(sid)) subs[sid] = true; });
+        next[id] = { ...record, subs, done: [...ids].every(sid => subs[sid]) };
+      });
+      days[key] = next;
+    });
+    return { ...raw, days };
+  }
 };
 
 // Upgrade any saved state to the current schema. Nothing is ever discarded:
@@ -267,16 +287,20 @@ function isLoggedToday(task) {
   return !!(record && record.done && record.archived);
 }
 
-// A task's total is fixed when it is created. Subtasks split it into equal
-// shares; the parent is always a share too and takes the rounding remainder.
+// A task's total is fixed when it is created. Subtasks are the only shares:
+// two subtasks mean two things to solve. The first shares take any remainder,
+// so checking them all always adds up to the exact task total.
 function freshValue(task) {
   return task.points;
 }
 function subtaskList(task) {
   return Array.isArray(task.subtasks) ? task.subtasks : [];
 }
-function subtaskShare(task) {
-  return Math.floor(task.points / (subtaskList(task).length + 1));
+function subtaskShare(task, index) {
+  const count = subtaskList(task).length;
+  if (!count) return 0;
+  const base = Math.floor(task.points / count);
+  return base + (index < task.points - base * count ? 1 : 0);
 }
 function allSubtasksDone(task, record) {
   const subs = subtaskList(task);
@@ -285,11 +309,8 @@ function allSubtasksDone(task, record) {
 function recordPoints(task, record) {
   const subs = subtaskList(task);
   if (!subs.length) return record.done ? record.value : 0;
-  const share = subtaskShare(task);
-  let total = subs.reduce((sum, s) =>
-    sum + (record.subs && record.subs[s.id] ? share : 0), 0);
-  if (record.done) total += task.points - share * subs.length;
-  return total;
+  return subs.reduce((sum, s, i) =>
+    sum + (record.subs && record.subs[s.id] ? subtaskShare(task, i) : 0), 0);
 }
 
 function ensureToday() {
@@ -522,22 +543,6 @@ function buildCardHead(task, right) {
   title.textContent = task.title;
   left.append(title);
 
-  const subs = subtaskList(task);
-  if (subs.length) {
-    const count = document.createElement("span");
-    count.className = "subtask-count";
-    count.textContent = "☰ " + subs.length;
-    count.title = subs.length + " underopgaver";
-    left.classList.add("expandable");
-    left.append(count);
-    left.addEventListener("click", () => {
-      if (swipeJustHappened) return;
-      if (expandedTasks.has(task.id)) expandedTasks.delete(task.id);
-      else expandedTasks.add(task.id);
-      renderTasks();
-    });
-  }
-
   const days = task.repeatDays || 0;
   if (days) {
     const badge = document.createElement("span");
@@ -587,14 +592,12 @@ function toggleDone(task, record, card) {
     record.done = false;
     record.archived = false;
   } else {
-    // The parent is the last share and cannot be taken before its subtasks.
-    const subs = subtaskList(task);
-    if (subs.length && !allSubtasksDone(task, record)) return;
+    if (subtaskList(task).length) return; // Subtask tasks complete themselves.
     record.done = true;
     record.archived = false;
     record.value = task.points;
     justCompletedId = task.id;
-    animateCoins(card, task.points - subtaskShare(task) * subs.length);
+    animateCoins(card, task.points);
   }
   save();
   renderTasks(before);
@@ -605,14 +608,18 @@ function toggleSubtask(task, record, subId, card) {
   if (!record.subs) record.subs = {};
   if (record.subs[subId]) {
     delete record.subs[subId];
-    // An open subtask means the parent cannot be completed any more.
-    if (record.done) {
-      record.done = false;
-      record.archived = false;
-    }
+    record.done = false;
+    record.archived = false;
   } else {
     record.subs[subId] = true;
-    animateCoins(card, subtaskShare(task));
+    const index = subtaskList(task).findIndex(s => s.id === subId);
+    animateCoins(card, subtaskShare(task, index));
+    // No parent checkbox: the last subtask completes the whole task.
+    if (allSubtasksDone(task, record)) {
+      record.done = true;
+      record.archived = false;
+      justCompletedId = task.id;
+    }
   }
   save();
   renderTasks(before);
@@ -624,13 +631,34 @@ function buildCardRight(task, record, card) {
   const value = document.createElement("span");
   value.className = "task-value num";
   value.textContent = format(recordPoints(task, record));
+  const subs = subtaskList(task);
+  if (subs.length) {
+    // The checkbox is replaced by a count circle and one dot per subtask.
+    // When the card is open the dots drop down into the rows instead.
+    const indicator = document.createElement("div");
+    indicator.className = "subtask-indicator" +
+      (expandedTasks.has(task.id) ? " expanded" : "");
+    indicator.title = subs.length + " underopgaver";
+    const count = document.createElement("span");
+    count.className = "subtask-count-circle num";
+    count.textContent = String(subs.length);
+    const dots = document.createElement("span");
+    dots.className = "subtask-dots";
+    subs.forEach((sub, i) => {
+      const dot = document.createElement("span");
+      dot.className = "subtask-dot" + (record.subs && record.subs[sub.id] ? " checked" : "");
+      dot.style.setProperty("--i", String(i));
+      dots.append(dot);
+    });
+    indicator.append(count, dots);
+    right.append(value, indicator);
+    return right;
+  }
+
   const done = document.createElement("button");
   done.className = "done-button";
   done.type = "button";
-  const pending = subtaskList(task).length > 0 && !record.done && !allSubtasksDone(task, record);
-  done.disabled = pending;
-  const label = pending ? "Kryds alle underopgaver af først"
-    : (record.done ? "Fortryd gennemførelse" : "Markér som gennemført");
+  const label = record.done ? "Fortryd gennemførelse" : "Markér som gennemført";
   done.title = label;
   done.setAttribute("aria-label", label);
   done.innerHTML = CHECK_ICON;
@@ -660,33 +688,51 @@ function buildTaskCard(task) {
   content.className = "task-content";
   content.append(buildCardHead(task, buildCardRight(task, record, card)));
   content.append(buildCardActions(task));
-  if (subtaskList(task).length && expandedTasks.has(task.id)) {
-    const list = document.createElement("div");
-    list.className = "subtask-list";
-    subtaskList(task).forEach(sub => {
-      const checked = !!(record.subs && record.subs[sub.id]);
-      const row = document.createElement("div");
-      row.className = "subtask-row" + (checked ? " checked" : "");
-      const label = document.createElement("span");
-      label.className = "subtask-text";
-      label.textContent = sub.title;
-      const share = document.createElement("span");
-      share.className = "subtask-share num";
-      share.textContent = "+" + format(subtaskShare(task));
-      const check = document.createElement("button");
-      check.type = "button";
-      check.className = "subtask-check" + (checked ? " checked" : "");
-      check.title = checked ? "Fortryd afkrydsning" : "Kryds underopgave af";
-      check.setAttribute("aria-label", check.title + ": " + sub.title);
-      check.innerHTML = CHECK_ICON;
-      check.addEventListener("click", e => {
-        e.stopPropagation();
-        toggleSubtask(task, record, sub.id, card);
-      });
-      row.append(label, share, check);
-      list.append(row);
+
+  const subs = subtaskList(task);
+  if (subs.length) {
+    content.classList.add("expandable");
+    content.tabIndex = 0;
+    content.setAttribute("aria-expanded", expandedTasks.has(task.id) ? "true" : "false");
+    const toggleOpen = () => {
+      if (swipeJustHappened) return;
+      if (expandedTasks.has(task.id)) expandedTasks.delete(task.id);
+      else expandedTasks.add(task.id);
+      renderTasks();
+    };
+    content.addEventListener("click", e => {
+      if (e.target.closest(".subtask-check,.edit-button,.delete-button")) return;
+      toggleOpen();
     });
-    content.append(list);
+    content.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleOpen(); }
+    });
+    if (expandedTasks.has(task.id)) {
+      const list = document.createElement("div");
+      list.className = "subtask-list";
+      subs.forEach((sub, index) => {
+        const checked = !!(record.subs && record.subs[sub.id]);
+        const row = document.createElement("div");
+        row.className = "subtask-row" + (checked ? " checked" : "");
+        const label = document.createElement("span");
+        label.className = "subtask-text";
+        label.textContent = sub.title;
+        const check = document.createElement("button");
+        check.type = "button";
+        check.className = "subtask-check" + (checked ? " checked" : "");
+        check.style.setProperty("--i", String(index)); // staggered drop-in
+        check.title = checked ? "Fortryd afkrydsning" : "Kryds underopgave af";
+        check.setAttribute("aria-label", check.title + ": " + sub.title);
+        check.innerHTML = CHECK_ICON;
+        check.addEventListener("click", e => {
+          e.stopPropagation();
+          toggleSubtask(task, record, sub.id, card);
+        });
+        row.append(label, check);
+        list.append(row);
+      });
+      content.append(list);
+    }
   }
   card.append(swipeBg, content);
 
@@ -1189,13 +1235,13 @@ function renderTaskForm(body, task = null) {
   addRow.append(subInput, addBtn);
   const subHint = document.createElement("div");
   subHint.className = "hint";
-  subHint.textContent = "Point deles lige mellem underopgaver og hovedopgave. Træk for at ændre rækkefølgen.";
+  subHint.textContent = "Point deles mellem underopgaverne. Træk for at ændre rækkefølgen.";
   subField.append(subLabel, subList, addRow, subHint);
 
   function paintSubtasks() {
     subList.replaceChildren();
-    const share = format(Math.floor(createPoints / (createSubtasks.length + 1)));
-    createSubtasks.forEach(sub => {
+    const draft = { points: createPoints, subtasks: createSubtasks };
+    createSubtasks.forEach((sub, index) => {
       const row = document.createElement("div");
       row.className = "subtask-editor-row";
       row.dataset.id = sub.id;
@@ -1208,7 +1254,7 @@ function renderTaskForm(body, task = null) {
       name.textContent = sub.title;
       const shareEl = document.createElement("span");
       shareEl.className = "subtask-share num";
-      shareEl.textContent = "+" + share;
+      shareEl.textContent = "+" + format(subtaskShare(draft, index));
       const del = document.createElement("button");
       del.type = "button";
       del.className = "subtask-delete";
