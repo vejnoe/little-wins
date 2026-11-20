@@ -16,7 +16,7 @@ og pushe `beta-3` i ro og mag.
   ```sh
   git worktree add -b beta-3 ../little-wins-beta-3 main
   ```
-  Start derefter en ny OpenCode-session med mappen `<beta-3-worktree>`.
+  Start derefter en ny OpenCode-session med worktree-mappen (stien afhænger af din maskine).
 - Opret worktree'et fra en **grøn** `main`, så udgangspunktet er kendt godt.
 
 ## Sådan laves en ny beta (eksempel: beta-3)
