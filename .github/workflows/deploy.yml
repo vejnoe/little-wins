@@ -61,6 +61,8 @@ jobs:
             --exclude '.git' \
             --exclude '.github' \
             --exclude '.DS_Store' \
+            --exclude 'stats/' \
+            --exclude '.htaccess' \
             --exclude 'AGENTS.md' \
             --exclude 'KNOWN-ISSUES.md' \
             -e "ssh -i ~/.ssh/id_deploy -p $SSH_PORT -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes" \
