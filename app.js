@@ -7,6 +7,17 @@ const STORAGE_KEY = "little_wins_v1";
 // history in the footer both read from this list. Newest version first.
 const VERSIONS = [
   {
+    version: "beta-3",
+    label: "Beta 3",
+    date: "20. nov. 2026",
+    lead: "Små justeringer til hverdagen:",
+    changes: [
+      "Gennemførte opgaver bliver liggende på deres plads, indtil du logger dem",
+      "Stryg kræver nu en klar vandret bevægelse — skrå scroll sletter ikke ved et uheld",
+      "Toggles er gule ligesom resten af designet"
+    ]
+  },
+  {
     version: "beta-2",
     label: "Beta 2",
     date: "19. nov. 2026",
@@ -563,15 +574,14 @@ function renderTasks(animateFrom=null) {
   list.replaceChildren();
 
   const visible = state.tasks.filter(task => taskActiveOn(task, currentDate));
-  const open = visible.filter(task => !isDoneToday(task));
-  const done = visible.filter(task => isDoneToday(task));
+  const pendingCount = visible.filter(isDoneToday).length;
   const loggedCount = state.tasks.filter(isLoggedToday).length;
   const logged = showLogged ? state.tasks.filter(isLoggedToday) : [];
 
   const logButton = $("log-completed");
-  logButton.hidden = done.length === 0;
-  logButton.textContent = done.length > 1
-    ? "Log " + done.length + " gennemførte"
+  logButton.hidden = pendingCount === 0;
+  logButton.textContent = pendingCount > 1
+    ? "Log " + pendingCount + " gennemførte"
     : "Log gennemført";
 
   const loggedButton = $("show-logged");
@@ -597,15 +607,8 @@ function renderTasks(animateFrom=null) {
     return;
   }
 
-  open.forEach(task => list.append(buildTaskCard(task)));
-
-  if (done.length) {
-    const heading = document.createElement("div");
-    heading.className = "completed-heading";
-    heading.textContent = "Gennemført i dag";
-    list.append(heading);
-    done.forEach(task => list.append(buildTaskCard(task)));
-  }
+  // Completed cards keep their original place until logging archives them.
+  visible.forEach(task => list.append(buildTaskCard(task)));
 
   if (logged.length) {
     const heading = document.createElement("div");
@@ -621,24 +624,46 @@ function renderTasks(animateFrom=null) {
   }
 }
 
+// A diagonal scroll must never delete or edit a task. A drag only counts as a
+// swipe when it is clearly horizontal before the finger is lifted.
+const SWIPE_SLOP = 8;      // Dead zone before an axis is chosen.
+const SWIPE_COMMIT = 24;   // Distance that locks the gesture as horizontal.
+const SWIPE_TRIGGER = 70;  // Distance needed to actually fire an action.
+const SWIPE_RATIO = 2;     // Horizontal movement must be at least twice the vertical.
+
 /* Touch gestures: swipe left reveals the bin, swipe right reveals the pencil. */
 function attachSwipe(content, editAction, deleteAction, task) {
-  let startX = null, startY = null, axis = null;
+  let startX = null, startY = null, lastX = 0, lastY = 0;
+  let axis = null, committed = false;
 
   content.addEventListener("touchstart", e => {
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-    axis = null;
+    startX = lastX = e.touches[0].clientX;
+    startY = lastY = e.touches[0].clientY;
+    axis = null; committed = false;
     content.style.transition = "none";
   }, { passive: true });
 
   content.addEventListener("touchmove", e => {
     if (startX === null) return;
-    const dx = e.touches[0].clientX - startX;
-    const dy = e.touches[0].clientY - startY;
-    if (axis === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
-      axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+    const x = e.touches[0].clientX, y = e.touches[0].clientY;
+    const dx = x - startX, dy = y - startY;
+    lastX = x; lastY = y;
+
+    if (!committed) {
+      if (Math.abs(dx) < SWIPE_SLOP && Math.abs(dy) < SWIPE_SLOP) return;
+      if (Math.abs(dx) > Math.abs(dy) * SWIPE_RATIO) {
+        axis = "x";
+        if (Math.abs(dx) >= SWIPE_COMMIT) committed = true;
+      } else {
+        axis = "y";
+        // Treated as a scroll — never leave a half-open card behind.
+        content.style.transform = "translateX(0)";
+        editAction.style.opacity = "0";
+        deleteAction.style.opacity = "0";
+        return;
+      }
     }
+
     if (axis !== "x") return;
     const offset = clamp(dx, -110, 110);
     content.style.transform = `translateX(${offset}px)`;
@@ -650,11 +675,14 @@ function attachSwipe(content, editAction, deleteAction, task) {
   function finish(e) {
     if (startX === null) return;
     const touch = e.changedTouches && e.changedTouches[0];
-    const dx = touch ? touch.clientX - startX : 0;
-    startX = null; startY = null; axis = null;
+    const dx = (touch ? touch.clientX : lastX) - startX;
+    const dy = (touch ? touch.clientY : lastY) - startY;
+    const valid = committed && Math.abs(dx) >= SWIPE_TRIGGER &&
+      Math.abs(dx) > Math.abs(dy) * SWIPE_RATIO;
+    startX = null; startY = null; axis = null; committed = false;
     content.style.transition = "transform .2s ease";
 
-    if (dx < -60) {
+    if (valid && dx < 0) {
       content.style.transform = "translateX(-110%)";
       deleteAction.style.opacity = "1";
       setTimeout(() => {
@@ -662,7 +690,7 @@ function attachSwipe(content, editAction, deleteAction, task) {
         save();
         renderTasks();
       }, 200);
-    } else if (dx > 60) {
+    } else if (valid && dx > 0) {
       content.style.transform = "translateX(0)";
       editAction.style.opacity = "0";
       setTimeout(() => openModal("edit", task), 120);
@@ -861,7 +889,7 @@ document.querySelectorAll(".tab").forEach(tab=>{
 });
 $("history-prev").addEventListener("click",()=>changePeriod(1));
 $("history-next").addEventListener("click",()=>changePeriod(-1));
-// Logging is an explicit action: completed cards stay visible until this is tapped.
+// Logging is an explicit action: completed cards stay in place until this is tapped.
 $("log-completed").addEventListener("click",()=>{
   const day=state.days[currentDate] || {};
   state.tasks.forEach(task=>{

@@ -25,7 +25,6 @@
   --color-line-strong: #dddddd;
   --color-yellow: #fbbf24;
   --color-yellow-dark: #e6a900;
-  --color-green: #39865b;
   --color-danger: #c0392b;
   --color-danger-hover: #bb3333;
   --color-white: #ffffff;
@@ -87,7 +86,6 @@ html.dark {
   --color-action: #999999;
   --color-line: #333333;
   --color-line-strong: #444444;
-  --color-green: #4ade80;
   --color-scrim: rgba(0,0,0,.67);
   --color-toggle-off: #444444;
 }
@@ -195,6 +193,8 @@ header {
   position:relative;z-index:1;
   padding:17px;background:inherit;
   transition:transform var(--motion);
+  /* Let the browser own vertical scroll; JS only handles clearly horizontal swipes. */
+  touch-action:pan-y;
 }
 .swipe-bg {position:absolute;inset:0;display:flex;justify-content:space-between;z-index:0}
 .swipe-action {
@@ -204,7 +204,6 @@ header {
 .swipe-action.edit {background:var(--color-ink);color:var(--color-surface)}
 .swipe-action.delete {background:var(--color-danger);color:var(--color-white)}
 .swipe-action svg {width:24px;height:24px}
-@media(hover:none) {.task {touch-action:pan-y}}
 
 .card-head {gap:10px;margin-bottom:15px}
 .task-title-wrap {display:flex;align-items:center;gap:7px;min-width:0}
@@ -416,7 +415,7 @@ footer {
   border-radius:var(--radius-pill);background:var(--color-white);
   transition:transform var(--motion);box-shadow:var(--shadow-thumb);
 }
-.toggle.on {background:var(--color-green)}
+.toggle.on {background:var(--color-yellow)}
 .toggle.on::after {transform:translateX(20px)}
 .toggle-label {font-size:var(--text-md);font-weight:var(--weight-medium)}
 .version-line {
