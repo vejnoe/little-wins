@@ -1,5 +1,7 @@
 # AGENTS.md — Little Wins
 
+Kendte fejl, begrænsninger og test-faldgruber står i `KNOWN-ISSUES.md`.
+
 ## Produktet
 Installerbar PWA til daglige "små sejre" med point. Dansk UI, datoer som `onsdag 18. nov.`.
 Kører lokalt via PHP på `0.0.0.0:8000`. Gemt data ligger i `localStorage` under `little_wins_v1`,
