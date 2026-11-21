@@ -1195,9 +1195,29 @@ function closeModal() {
 }
 
 $("add-button").addEventListener("click", () => openModal("create"));
+
 // The web component owns the install dialog; manual flags keep it closed until
 // this button is tapped, and its own translations cover the browser versions.
 $("install-button").addEventListener("click", () => $("pwa-install").showDialog());
+
+// Hide the install button once the app is installed. Standalone mode is our own
+// synchronous signal (works before the component finishes loading); the
+// component's related-app check adds Chromium installs still open in a tab.
+function updateInstallButton() {
+  const el = $("pwa-install");
+  const standalone = window.matchMedia &&
+    (matchMedia("(display-mode: standalone)").matches || navigator.standalone === true);
+  const installedElsewhere = el && el.isRelatedAppsInstalled;
+  $("install-button").hidden = !!(standalone || installedElsewhere);
+}
+updateInstallButton();
+$("pwa-install").addEventListener("pwa-install-available-event", updateInstallButton);
+$("pwa-install").addEventListener("pwa-user-choice-result-event", updateInstallButton);
+window.addEventListener("appinstalled", updateInstallButton);
+if (window.matchMedia) {
+  matchMedia("(display-mode: standalone)").addEventListener("change", updateInstallButton);
+}
+
 $("settings-button").addEventListener("click", () => openModal("settings"));
 $("close-modal").addEventListener("click", closeModal);
 $("overlay").addEventListener("click", e => {

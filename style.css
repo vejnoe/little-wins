@@ -364,6 +364,7 @@ footer {
   font:600 var(--text-sm) var(--font-body);color:var(--color-ink-soft);
 }
 .footer-button:hover {border-color:var(--color-ink);color:var(--color-ink)}
+.footer-button[hidden] {display:none}
 
 /* 9. History -------------------------------------------------------------- */
 .week-nav {display:flex;align-items:center;gap:var(--space-3)}
