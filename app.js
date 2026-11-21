@@ -7,6 +7,21 @@ const STORAGE_KEY = "little_wins_v1";
 // history in the footer both read from this list. Newest version first.
 const VERSIONS = [
   {
+    version: "beta-3",
+    label: "Beta 3",
+    date: "20. nov. 2026",
+    lead: "Små justeringer til hverdagen:",
+    changes: [
+      "Gennemførte opgaver bliver liggende på deres plads, indtil du logger dem",
+      "Stryg kræver nu en klar vandret bevægelse — skrå scroll sletter ikke ved et uheld",
+      "Toggles er gule ligesom resten af designet",
+      "Gentagelses-label viser igen tal — hold musen hen over det for fuld tekst",
+      "Historikken viser kun uger, der er påbegyndt",
+      "»Installér« nederst på siden åbner nu en installationsdialog, der passer til din browser",
+      "Underopgaver: klik på kortet for at folde ud — hver underopgave er sin egen pointandel"
+    ]
+  },
+  {
     version: "beta-2",
     label: "Beta 2",
     date: "19. nov. 2026",
@@ -77,14 +92,21 @@ function mondayOfWeek(date) {
 function clamp(value,min,max) {
   return Math.max(min,Math.min(max,value));
 }
+function makeId() {
+  return (crypto.randomUUID && typeof crypto.randomUUID === "function")
+    ? crypto.randomUUID()
+    : (Date.now().toString(36) + Math.random().toString(36).slice(2));
+}
 
 const MAX_REPEAT_DAYS = 30;
+// One checkmark shape for the task button and its smaller subtask buttons.
+const CHECK_ICON = '<svg fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.5 5 5L19.5 6"/></svg>';
 
 // Saved-data schema. Bump DATA_VERSION whenever the shape of `state` changes
 // and add a step to MIGRATIONS for the previous version. Keep old steps for at
 // least three app versions: beta testers upgrade in place and must never lose
 // a single task or history record.
-const DATA_VERSION = 2;
+const DATA_VERSION = 4;
 const MIGRATIONS = {
   0: raw => {
     const tasks = (raw.tasks || []).map(t => {
@@ -125,6 +147,34 @@ const MIGRATIONS = {
     });
     const { simpleMode, ...rest } = raw;
     return { ...rest, tasks, days };
+  },
+  // Subtasks live on the task; daily checkmarks live in each day record under
+  // `subs`. Old tasks get an empty list, and no history record is touched.
+  2: raw => ({
+    ...raw,
+    tasks: raw.tasks.map(t =>
+      Array.isArray(t.subtasks) ? t : { ...t, subtasks: [] }
+    )
+  }),
+  // The parent is no longer a point share or a checkbox: a task is done exactly
+  // when all its subtasks are checked. Re-derive `done` from the saved checkmarks
+  // so old beta data keeps the same completed days; history records survive.
+  3: raw => {
+    const validIds = Object.fromEntries(raw.tasks.map(t =>
+      [t.id, new Set((t.subtasks || []).map(s => s.id))]));
+    const days = {};
+    Object.entries(raw.days).forEach(([key, day]) => {
+      const next = {};
+      Object.entries(day).forEach(([id, record]) => {
+        const ids = validIds[id];
+        if (!ids || !record.subs) { next[id] = record; return; }
+        const subs = {};
+        Object.keys(record.subs).forEach(sid => { if (ids.has(sid)) subs[sid] = true; });
+        next[id] = { ...record, subs, done: [...ids].every(sid => subs[sid]) };
+      });
+      days[key] = next;
+    });
+    return { ...raw, days };
   }
 };
 
@@ -162,6 +212,22 @@ if(!state.theme) state.theme="light";
 let justCompletedId = null;
 // View-only: whether logged tasks from today are shown at the bottom of the list.
 let showLogged = false;
+// View-only: which task cards are folded out to show their subtasks.
+const expandedTasks = new Set();
+// A swipe must not also count as a tap that folds the card out.
+let swipeJustHappened = false;
+// Cluster centres in percent of a square box for 1-5 overlapping dots. The
+// last slot in a 6+ cluster is the "+" overflow marker.
+const CLUSTER_DOTS = {
+  1: [[50, 50]],
+  2: [[34, 50], [66, 50]],
+  3: [[50, 30], [32, 66], [68, 66]],
+  4: [[50, 27], [27, 50], [73, 50], [50, 73]],
+  5: [[50, 26], [26, 47], [74, 47], [38, 74], [62, 74]]
+};
+// Rectangles of the cluster circles, kept across the re-render that opens a
+// card so the circles can fly down into the subtask rows.
+let clusterFlight = null;
 let currentDate = localDate();
 // History shows a three-month window; 0 = the most recent one.
 let historyOffset = 0;
@@ -233,9 +299,35 @@ function isLoggedToday(task) {
   return !!(record && record.done && record.archived);
 }
 
-// A task always awards its fixed point value, set when the task was created.
+// A task's total is fixed when it is created. Subtasks are the only shares:
+// two subtasks mean two things to solve. The first shares take any remainder,
+// so checking them all always adds up to the exact task total.
 function freshValue(task) {
   return task.points;
+}
+function subtaskList(task) {
+  return Array.isArray(task.subtasks) ? task.subtasks : [];
+}
+function subtaskShare(task, index) {
+  const count = subtaskList(task).length;
+  if (!count) return 0;
+  const base = Math.floor(task.points / count);
+  return base + (index < task.points - base * count ? 1 : 0);
+}
+function allSubtasksDone(task, record) {
+  const subs = subtaskList(task);
+  return subs.length > 0 && subs.every(s => record.subs && record.subs[s.id]);
+}
+function recordPoints(task, record) {
+  const subs = subtaskList(task);
+  if (!subs.length) return record.done ? record.value : 0;
+  return subs.reduce((sum, s, i) =>
+    sum + (record.subs && record.subs[s.id] ? subtaskShare(task, i) : 0), 0);
+}
+// The card shows what is still left to earn, counting down to zero as the
+// task (or its subtasks) are checked. The header total keeps the earned sum.
+function remainingPoints(task, record) {
+  return Math.max(0, task.points - recordPoints(task, record));
 }
 
 function ensureToday() {
@@ -269,13 +361,11 @@ function entry(task,date=currentDate) {
 
 function dayTotal(date=currentDate) {
   const records = state.days[date] || {};
-  return Object.values(records).reduce((sum,r) =>
-    sum + (r.done ? r.value : 0),0);
-}
-
-function allTimeTotal() {
-  return Object.values(state.days).reduce((sum,day) =>
-    sum + Object.values(day).reduce((s,r)=>s+(r.done?r.value:0),0),0);
+  const byId = new Map(state.tasks.map(t => [t.id, t]));
+  return Object.entries(records).reduce((sum,[id,r]) => {
+    const task = byId.get(id);
+    return sum + (task ? recordPoints(task, r) : (r.done ? r.value : 0));
+  }, 0);
 }
 
 /* Audio: the coin clip is fetched and decoded once at startup, so the first
@@ -431,14 +521,27 @@ function renderHeader(animateFrom=null) {
 }
 
 /* Today's task list */
-function repeatLabel(days) {
-  if (!days) return "";
-  return days === 1 ? "↻" : "↻ " + days;
+// Natural Danish ordinals for the hover text. Past 10 the numeric form
+// ("hver 11. dag") is the idiomatic spelling, so it is used as the fallback.
+const REPEAT_ORDINAL = [
+  "", "første", "anden", "tredje", "fjerde", "femte",
+  "sjette", "syvende", "ottende", "niende", "tiende"
+];
+
+// One source of truth for the full wording — hover text, accessible name and
+// the form's value display all read the same natural phrase.
+function repeatTitle(days) {
+  if (!days) return "Gentager ikke";
+  if (days === 1) return "Gentager hver dag";
+  const ordinal = REPEAT_ORDINAL[days];
+  return ordinal
+    ? "Gentager hver " + ordinal + " dag"
+    : "Gentager hver " + days + ". dag";
 }
 
-function repeatTitle(days) {
-  if (!days) return "";
-  return days === 1 ? "Gentag hver dag" : "Gentag hver " + days + ". dag";
+// The card badge stays compact; the full wording lives in title/aria-label.
+function repeatBadge(days) {
+  return days === 1 ? "↻" : "↻ " + days;
 }
 
 function buildCardHead(task, right) {
@@ -452,14 +555,22 @@ function buildCardHead(task, right) {
   title.textContent = task.title;
   left.append(title);
 
+  const subs = subtaskList(task);
+  if (subs.length) {
+    const count = document.createElement("span");
+    count.className = "subtask-count num";
+    count.textContent = String(subs.length);
+    count.title = subs.length + " underopgaver";
+    left.append(count);
+  }
+
   const days = task.repeatDays || 0;
   if (days) {
     const badge = document.createElement("span");
     badge.className = "recurring-badge";
-    badge.textContent = repeatLabel(days);
-    const label = repeatTitle(days);
-    badge.title = label;
-    badge.setAttribute("aria-label", label);
+    badge.textContent = repeatBadge(days);
+    badge.title = repeatTitle(days);
+    badge.setAttribute("aria-label", repeatTitle(days));
     left.append(badge);
   }
 
@@ -502,11 +613,34 @@ function toggleDone(task, record, card) {
     record.done = false;
     record.archived = false;
   } else {
+    if (subtaskList(task).length) return; // Subtask tasks complete themselves.
     record.done = true;
     record.archived = false;
     record.value = task.points;
     justCompletedId = task.id;
-    animateCoins(card, record.value);
+    animateCoins(card, task.points);
+  }
+  save();
+  renderTasks(before);
+}
+
+function toggleSubtask(task, record, subId, card) {
+  const before=dayTotal();
+  if (!record.subs) record.subs = {};
+  if (record.subs[subId]) {
+    delete record.subs[subId];
+    record.done = false;
+    record.archived = false;
+  } else {
+    record.subs[subId] = true;
+    const index = subtaskList(task).findIndex(s => s.id === subId);
+    animateCoins(card, subtaskShare(task, index));
+    // No parent checkbox: the last subtask completes the whole task.
+    if (allSubtasksDone(task, record)) {
+      record.done = true;
+      record.archived = false;
+      justCompletedId = task.id;
+    }
   }
   save();
   renderTasks(before);
@@ -517,12 +651,47 @@ function buildCardRight(task, record, card) {
   right.className = "task-right";
   const value = document.createElement("span");
   value.className = "task-value num";
-  value.textContent = format(record.value);
+  value.textContent = format(remainingPoints(task, record));
+  const subs = subtaskList(task);
+  if (subs.length) {
+    if (expandedTasks.has(task.id)) {
+      const chevron = document.createElement("span");
+      chevron.className = "subtask-chevron";
+      chevron.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m6 15 6-6 6 6"/></svg>';
+      right.append(value, chevron);
+      return right;
+    }
+
+    // Closed card: up to five overlapping circles; filled means checked.
+    const cluster = document.createElement("div");
+    cluster.className = "subtask-cluster";
+    cluster.title = subs.length + " underopgaver";
+    const shown = Math.min(subs.length, 5);
+    const positions = CLUSTER_DOTS[shown];
+    positions.forEach(([x, y], i) => {
+      const dot = document.createElement("span");
+      const more = shown < subs.length && i === shown - 1;
+      const sub = subs[i];
+      dot.className = "subtask-dot" +
+        (!more && record.subs && record.subs[sub.id] ? " checked" : "") +
+        (more ? " more" : "");
+      dot.style.left = x + "%";
+      dot.style.top = y + "%";
+      dot.style.setProperty("--i", String(i));
+      if (more) dot.textContent = "+";
+      cluster.append(dot);
+    });
+    right.append(value, cluster);
+    return right;
+  }
+
   const done = document.createElement("button");
   done.className = "done-button";
   done.type = "button";
-  done.setAttribute("aria-label", record.done ? "Fortryd gennemførelse" : "Markér som gennemført");
-  done.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.5 5 5L19.5 6"/></svg>';
+  const label = record.done ? "Fortryd gennemførelse" : "Markér som gennemført";
+  done.title = label;
+  done.setAttribute("aria-label", label);
+  done.innerHTML = CHECK_ICON;
   done.addEventListener("click", () => toggleDone(task, record, card));
   right.append(value, done);
   return right;
@@ -549,6 +718,91 @@ function buildTaskCard(task) {
   content.className = "task-content";
   content.append(buildCardHead(task, buildCardRight(task, record, card)));
   content.append(buildCardActions(task));
+
+  const subs = subtaskList(task);
+  if (subs.length) {
+    content.classList.add("expandable");
+    content.tabIndex = 0;
+    content.setAttribute("aria-expanded", expandedTasks.has(task.id) ? "true" : "false");
+    const toggleOpen = () => {
+      if (swipeJustHappened) return;
+      if (expandedTasks.has(task.id)) {
+        expandedTasks.delete(task.id);
+      } else {
+        // Remember where the cluster circles sat before the card re-renders.
+        clusterFlight = {
+          taskId: task.id,
+          rects: [...content.querySelectorAll(".subtask-dot")].map(dot => {
+            const r = dot.getBoundingClientRect();
+            return { x: r.left + r.width / 2, y: r.top + r.height / 2, size: r.width };
+          })
+        };
+        expandedTasks.add(task.id);
+      }
+      renderTasks();
+    };
+    content.addEventListener("click", e => {
+      if (e.target.closest(".subtask-check,.edit-button,.delete-button")) return;
+      toggleOpen();
+    });
+    content.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleOpen(); }
+    });
+    if (expandedTasks.has(task.id)) {
+      const list = document.createElement("div");
+      list.className = "subtask-list";
+      subs.forEach((sub, index) => {
+        const checked = !!(record.subs && record.subs[sub.id]);
+        const row = document.createElement("div");
+        row.className = "subtask-row" + (checked ? " checked" : "");
+        const label = document.createElement("span");
+        label.className = "subtask-text";
+        label.textContent = sub.title;
+        const check = document.createElement("button");
+        check.type = "button";
+        check.className = "done-button subtask-check" + (checked ? " checked" : "");
+        check.title = checked ? "Fortryd afkrydsning" : "Kryds underopgave af";
+        check.setAttribute("aria-label", check.title + ": " + sub.title);
+        check.innerHTML = CHECK_ICON;
+        check.addEventListener("click", e => {
+          e.stopPropagation();
+          toggleSubtask(task, record, sub.id, card);
+        });
+        row.append(label, check);
+        list.append(row);
+      });
+      content.append(list);
+      if (clusterFlight && clusterFlight.taskId === task.id) {
+        const flight = clusterFlight;
+        clusterFlight = null;
+        const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+        if (!reduced) requestAnimationFrame(() => {
+          [...list.querySelectorAll(".subtask-check")].forEach((check, i) => {
+            // A fast second tap can replace the DOM before this frame runs.
+            if (!check.isConnected) return;
+            const from = flight.rects[i];
+            if (!from) {
+              check.animate([{ opacity: 0 }, { opacity: 1 }],
+                { duration: 240, delay: i * 45, fill: "both" });
+              return;
+            }
+            const to = check.getBoundingClientRect();
+            if (!to.width) return;
+            const dx = from.x - (to.left + to.width / 2);
+            const dy = from.y - (to.top + to.height / 2);
+            const scale = from.size / to.width;
+            // A slight arc: drift sideways at the midpoint, then settle.
+            const midX = dx * 1.12, midY = dy * 0.45;
+            check.animate([
+              { transform: `translate(${dx}px,${dy}px) scale(${scale}) rotate(-25deg)`, opacity: .6 },
+              { transform: `translate(${midX}px,${midY}px) scale(1.08) rotate(8deg)`, opacity: 1, offset: .6 },
+              { transform: "translate(0,0) scale(1) rotate(0deg)" }
+            ], { duration: 420, easing: "cubic-bezier(.25,.9,.25,1)", delay: i * 55, fill: "both" });
+          });
+        });
+      }
+    }
+  }
   card.append(swipeBg, content);
 
   if (isInTouchMode) attachSwipe(content, editAction, deleteAction, task);
@@ -563,15 +817,14 @@ function renderTasks(animateFrom=null) {
   list.replaceChildren();
 
   const visible = state.tasks.filter(task => taskActiveOn(task, currentDate));
-  const open = visible.filter(task => !isDoneToday(task));
-  const done = visible.filter(task => isDoneToday(task));
+  const pendingCount = visible.filter(isDoneToday).length;
   const loggedCount = state.tasks.filter(isLoggedToday).length;
   const logged = showLogged ? state.tasks.filter(isLoggedToday) : [];
 
   const logButton = $("log-completed");
-  logButton.hidden = done.length === 0;
-  logButton.textContent = done.length > 1
-    ? "Log " + done.length + " gennemførte"
+  logButton.hidden = pendingCount === 0;
+  logButton.textContent = pendingCount > 1
+    ? "Log " + pendingCount + " gennemførte"
     : "Log gennemført";
 
   const loggedButton = $("show-logged");
@@ -597,15 +850,8 @@ function renderTasks(animateFrom=null) {
     return;
   }
 
-  open.forEach(task => list.append(buildTaskCard(task)));
-
-  if (done.length) {
-    const heading = document.createElement("div");
-    heading.className = "completed-heading";
-    heading.textContent = "Gennemført i dag";
-    list.append(heading);
-    done.forEach(task => list.append(buildTaskCard(task)));
-  }
+  // Completed cards keep their original place until logging archives them.
+  visible.forEach(task => list.append(buildTaskCard(task)));
 
   if (logged.length) {
     const heading = document.createElement("div");
@@ -621,24 +867,46 @@ function renderTasks(animateFrom=null) {
   }
 }
 
+// A diagonal scroll must never delete or edit a task. A drag only counts as a
+// swipe when it is clearly horizontal before the finger is lifted.
+const SWIPE_SLOP = 8;      // Dead zone before an axis is chosen.
+const SWIPE_COMMIT = 24;   // Distance that locks the gesture as horizontal.
+const SWIPE_TRIGGER = 70;  // Distance needed to actually fire an action.
+const SWIPE_RATIO = 2;     // Horizontal movement must be at least twice the vertical.
+
 /* Touch gestures: swipe left reveals the bin, swipe right reveals the pencil. */
 function attachSwipe(content, editAction, deleteAction, task) {
-  let startX = null, startY = null, axis = null;
+  let startX = null, startY = null, lastX = 0, lastY = 0;
+  let axis = null, committed = false;
 
   content.addEventListener("touchstart", e => {
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-    axis = null;
+    startX = lastX = e.touches[0].clientX;
+    startY = lastY = e.touches[0].clientY;
+    axis = null; committed = false;
     content.style.transition = "none";
   }, { passive: true });
 
   content.addEventListener("touchmove", e => {
     if (startX === null) return;
-    const dx = e.touches[0].clientX - startX;
-    const dy = e.touches[0].clientY - startY;
-    if (axis === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
-      axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+    const x = e.touches[0].clientX, y = e.touches[0].clientY;
+    const dx = x - startX, dy = y - startY;
+    lastX = x; lastY = y;
+
+    if (!committed) {
+      if (Math.abs(dx) < SWIPE_SLOP && Math.abs(dy) < SWIPE_SLOP) return;
+      if (Math.abs(dx) > Math.abs(dy) * SWIPE_RATIO) {
+        axis = "x";
+        if (Math.abs(dx) >= SWIPE_COMMIT) committed = true;
+      } else {
+        axis = "y";
+        // Treated as a scroll — never leave a half-open card behind.
+        content.style.transform = "translateX(0)";
+        editAction.style.opacity = "0";
+        deleteAction.style.opacity = "0";
+        return;
+      }
     }
+
     if (axis !== "x") return;
     const offset = clamp(dx, -110, 110);
     content.style.transform = `translateX(${offset}px)`;
@@ -650,11 +918,18 @@ function attachSwipe(content, editAction, deleteAction, task) {
   function finish(e) {
     if (startX === null) return;
     const touch = e.changedTouches && e.changedTouches[0];
-    const dx = touch ? touch.clientX - startX : 0;
-    startX = null; startY = null; axis = null;
+    const dx = (touch ? touch.clientX : lastX) - startX;
+    const dy = (touch ? touch.clientY : lastY) - startY;
+    const valid = committed && Math.abs(dx) >= SWIPE_TRIGGER &&
+      Math.abs(dx) > Math.abs(dy) * SWIPE_RATIO;
+    startX = null; startY = null; axis = null; committed = false;
     content.style.transition = "transform .2s ease";
 
-    if (dx < -60) {
+    if (valid) {
+      swipeJustHappened = true;
+      setTimeout(() => { swipeJustHappened = false; }, 350);
+    }
+    if (valid && dx < 0) {
       content.style.transform = "translateX(-110%)";
       deleteAction.style.opacity = "1";
       setTimeout(() => {
@@ -662,7 +937,7 @@ function attachSwipe(content, editAction, deleteAction, task) {
         save();
         renderTasks();
       }, 200);
-    } else if (dx > 60) {
+    } else if (valid && dx > 0) {
       content.style.transform = "translateX(0)";
       editAction.style.opacity = "0";
       setTimeout(() => openModal("edit", task), 120);
@@ -749,7 +1024,10 @@ function endOfMonth(date) {
 // three-month window back; the oldest data decides how far back you can go.
 function periodRange(offset=historyOffset) {
   const end=addMonths(monthStart(new Date()),-offset*WINDOW_MONTHS);
-  return { start:addMonths(end,-(WINDOW_MONTHS-1)), end, lastDay:endOfMonth(end) };
+  // The current window stops today: weeks that have not begun yet are not
+  // history, and the started week is the one shown as selected.
+  const lastDay=offset===0 ? new Date() : endOfMonth(end);
+  return { start:addMonths(end,-(WINDOW_MONTHS-1)), end, lastDay };
 }
 
 function maxHistoryOffset() {
@@ -861,7 +1139,7 @@ document.querySelectorAll(".tab").forEach(tab=>{
 });
 $("history-prev").addEventListener("click",()=>changePeriod(1));
 $("history-next").addEventListener("click",()=>changePeriod(-1));
-// Logging is an explicit action: completed cards stay visible until this is tapped.
+// Logging is an explicit action: completed cards stay in place until this is tapped.
 $("log-completed").addEventListener("click",()=>{
   const day=state.days[currentDate] || {};
   state.tasks.forEach(task=>{
@@ -888,6 +1166,7 @@ let currentModal = null;
 let editingTask = null;
 let createPoints = 1000;
 let createRepeatDays = 0;
+let createSubtasks = [];
 let submitting = false;
 
 const MODAL_TITLES = {
@@ -900,6 +1179,7 @@ const MODAL_TITLES = {
 function openModal(type, task = null) {
   currentModal = type;
   editingTask = (type === "edit") ? task : null;
+  createSubtasks = editingTask ? subtaskList(editingTask).map(s => ({ ...s })) : [];
   $("modal-title").textContent = MODAL_TITLES[type] || "";
   const body = $("modal-body");
   body.replaceChildren();
@@ -920,6 +1200,29 @@ function closeModal() {
 }
 
 $("add-button").addEventListener("click", () => openModal("create"));
+
+// The web component owns the install dialog; manual flags keep it closed until
+// this button is tapped, and its own translations cover the browser versions.
+$("install-button").addEventListener("click", () => $("pwa-install").showDialog());
+
+// Hide the install button once the app is installed. Standalone mode is our own
+// synchronous signal (works before the component finishes loading); the
+// component's related-app check adds Chromium installs still open in a tab.
+function updateInstallButton() {
+  const el = $("pwa-install");
+  const standalone = window.matchMedia &&
+    (matchMedia("(display-mode: standalone)").matches || navigator.standalone === true);
+  const installedElsewhere = el && el.isRelatedAppsInstalled;
+  $("install-button").hidden = !!(standalone || installedElsewhere);
+}
+updateInstallButton();
+$("pwa-install").addEventListener("pwa-install-available-event", updateInstallButton);
+$("pwa-install").addEventListener("pwa-user-choice-result-event", updateInstallButton);
+window.addEventListener("appinstalled", updateInstallButton);
+if (window.matchMedia) {
+  matchMedia("(display-mode: standalone)").addEventListener("change", updateInstallButton);
+}
+
 $("settings-button").addEventListener("click", () => openModal("settings"));
 $("close-modal").addEventListener("click", closeModal);
 $("overlay").addEventListener("click", e => {
@@ -937,12 +1240,6 @@ document.addEventListener("keydown", e => {
 });
 
 /* Shared task form – used for both create and edit */
-function repeatValueLabel(days) {
-  if (!days) return "Gentager ikke";
-  return days === 1 ? "Hver dag" : "Hver " + days + ". dag";
-}
-
-/* Shared task form – used for both create and edit */
 function renderTaskForm(body, task = null) {
   const MIN = 1000;
   const MAX = 1000000;
@@ -953,6 +1250,7 @@ function renderTaskForm(body, task = null) {
   nameLabel.textContent = "Opgavens navn";
   const nameInput = document.createElement("input");
   nameInput.id = "task-name";
+  nameLabel.htmlFor = "task-name";
   nameInput.maxLength = 60;
   nameInput.placeholder = "F.eks. Gåtur, Ryd op...";
   nameInput.required = true;
@@ -961,21 +1259,23 @@ function renderTaskForm(body, task = null) {
 
   // One reusable slider control, used for both the points and the repeat interval.
   createPoints = task ? clamp(task.points, MIN, MAX) : MIN;
+  let subList = null; // Assigned below; the points slider repaints its shares.
   const pointsControl = makeRangeControl({
     min: MIN,
     max: MAX,
     value: createPoints,
     ariaLabel: "Point for opgaven",
     formatTooltip: v => format(v),
-    onChange: v => { createPoints = v; }
+    onChange: v => { createPoints = v; if (subList) paintSubtasks(); }
   });
   const pointsField = document.createElement("div");
   pointsField.className = "field";
-  const pointsLabel = document.createElement("label");
+  const pointsLabel = document.createElement("span");
+  pointsLabel.className = "field-label";
   pointsLabel.textContent = "Point";
   const pointsHint = document.createElement("div");
   pointsHint.className = "hint";
-  pointsHint.textContent = "Opgaven giver altid dette beløb, når du sætter kryds.";
+  pointsHint.textContent = "Det samlede beløb for opgaven.";
   pointsField.append(pointsLabel, pointsControl.area, pointsControl.valueDisplay, pointsHint);
 
   createRepeatDays = task ? (task.repeatDays || 0) : 0;
@@ -985,17 +1285,127 @@ function renderTaskForm(body, task = null) {
     value: createRepeatDays,
     ariaLabel: "Gentagelse",
     formatTooltip: v => String(v),
-    formatValue: repeatValueLabel,
+    formatValue: repeatTitle,
     onChange: v => { createRepeatDays = v; }
   });
   const repeatField = document.createElement("div");
   repeatField.className = "field";
-  const repeatLabel = document.createElement("label");
+  const repeatLabel = document.createElement("span");
+  repeatLabel.className = "field-label";
   repeatLabel.textContent = "Gentagelse";
   const repeatHint = document.createElement("div");
   repeatHint.className = "hint";
   repeatHint.textContent = "0 gentager ikke. Vælg antal dage for at få opgaven tilbage efter gennemførelse.";
   repeatField.append(repeatLabel, repeatControl.area, repeatControl.valueDisplay, repeatHint);
+
+  // Subtasks are edited on the parent only. The input sits below the list so
+  // new rows appear above it, and Enter adds a row without saving the form.
+  const subField = document.createElement("div");
+  subField.className = "field";
+  const subLabel = document.createElement("span");
+  subLabel.className = "field-label";
+  subLabel.textContent = "Underopgaver";
+  subList = document.createElement("div");
+  subList.className = "subtask-editor-list";
+  const addRow = document.createElement("div");
+  addRow.className = "subtask-add-row";
+  const subInput = document.createElement("input");
+  subInput.id = "subtask-name";
+  subInput.setAttribute("aria-label", "Ny underopgave");
+  subInput.className = "subtask-text";
+  subInput.maxLength = 60;
+  subInput.placeholder = "Ny underopgave";
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "subtask-add";
+  addBtn.textContent = "+";
+  addBtn.title = "Tilføj underopgave";
+  addBtn.setAttribute("aria-label", "Tilføj underopgave");
+  addRow.append(subInput, addBtn);
+  const subHint = document.createElement("div");
+  subHint.className = "hint";
+  subHint.textContent = "Point deles mellem underopgaverne. Træk for at ændre rækkefølgen.";
+  subField.append(subLabel, subList, addRow, subHint);
+
+  function paintSubtasks() {
+    subList.replaceChildren();
+    const draft = { points: createPoints, subtasks: createSubtasks };
+    createSubtasks.forEach((sub, index) => {
+      const row = document.createElement("div");
+      row.className = "subtask-editor-row";
+      row.dataset.id = sub.id;
+      const handle = document.createElement("span");
+      handle.className = "subtask-drag";
+      handle.textContent = "⋮⋮";
+      handle.title = "Træk for at ændre rækkefølgen";
+      const name = document.createElement("span");
+      name.className = "subtask-text";
+      name.textContent = sub.title;
+      const shareEl = document.createElement("span");
+      shareEl.className = "subtask-share num";
+      shareEl.textContent = "+" + format(subtaskShare(draft, index));
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "subtask-delete";
+      del.textContent = "×";
+      del.title = "Slet underopgave";
+      del.setAttribute("aria-label", "Slet underopgave: " + sub.title);
+      del.addEventListener("click", () => {
+        createSubtasks = createSubtasks.filter(s => s.id !== sub.id);
+        paintSubtasks();
+      });
+      row.append(handle, name, shareEl, del);
+      subList.append(row);
+    });
+  }
+
+  function addSubtask() {
+    const title = subInput.value.trim();
+    if (!title) return;
+    createSubtasks.push({ id: makeId(), title });
+    subInput.value = "";
+    paintSubtasks();
+    subInput.focus();
+  }
+  addBtn.addEventListener("click", addSubtask);
+  subInput.addEventListener("keydown", e => {
+    // Enter belongs to this field; the form's global Enter must not submit.
+    if (e.key === "Enter") { e.preventDefault(); e.stopImmediatePropagation(); addSubtask(); }
+  });
+
+  // Pointer events cover both mouse and touch; the handle alone owns the drag
+  // so the modal can still scroll normally everywhere else.
+  let dragging = null;
+  subList.addEventListener("pointerdown", e => {
+    const handle = e.target.closest(".subtask-drag");
+    if (!handle) return;
+    dragging = handle.closest(".subtask-editor-row");
+    dragging.classList.add("dragging");
+    // Synthetic pointer events have no active pointer to capture.
+    try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  subList.addEventListener("pointermove", e => {
+    if (!dragging) return;
+    const others = [...subList.querySelectorAll(".subtask-editor-row:not(.dragging)")];
+    const before = others.find(row => {
+      const box = row.getBoundingClientRect();
+      return e.clientY < box.top + box.height / 2;
+    });
+    if (before) subList.insertBefore(dragging, before);
+    else if (others.length) subList.append(dragging); // Past the last row.
+  });
+  const endDrag = () => {
+    if (!dragging) return;
+    dragging.classList.remove("dragging");
+    dragging = null;
+    // The DOM is the order; read it back once instead of juggling indices.
+    createSubtasks = [...subList.querySelectorAll(".subtask-editor-row")]
+      .map(row => createSubtasks.find(s => s.id === row.dataset.id))
+      .filter(Boolean);
+  };
+  subList.addEventListener("pointerup", endDrag);
+  subList.addEventListener("pointercancel", endDrag);
+  paintSubtasks();
 
   const error = document.createElement("div");
   error.className = "error";
@@ -1007,7 +1417,7 @@ function renderTaskForm(body, task = null) {
   saveBtn.textContent = task ? "Gem ændringer" : "Gem opgave";
   saveBtn.addEventListener("click", submitTask);
 
-  body.append(nameField, pointsField, repeatField, error, saveBtn);
+  body.append(nameField, pointsField, repeatField, subField, error, saveBtn);
 }
 
 function submitTask() {
@@ -1043,11 +1453,17 @@ function submitTask() {
         if (record && !record.done) record.value = points;
       });
     } else {
-      const id = (crypto.randomUUID && typeof crypto.randomUUID === "function")
-        ? crypto.randomUUID()
-        : (Date.now().toString(36) + Math.random().toString(36).slice(2));
-      task = { id, title, points, repeatDays };
+      task = { id: makeId(), title, points, repeatDays, subtasks: [] };
       state.tasks.push(task);
+    }
+    task.subtasks = createSubtasks.map(s => ({ ...s }));
+    // A deleted subtask must not keep awarding points from today's record.
+    const todayRecord = state.days[currentDate] && state.days[currentDate][task.id];
+    if (todayRecord && todayRecord.subs) {
+      const ids = new Set(task.subtasks.map(s => s.id));
+      Object.keys(todayRecord.subs).forEach(id => {
+        if (!ids.has(id)) delete todayRecord.subs[id];
+      });
     }
     ensureToday();
     entry(task);

@@ -25,7 +25,6 @@
   --color-line-strong: #dddddd;
   --color-yellow: #fbbf24;
   --color-yellow-dark: #e6a900;
-  --color-green: #39865b;
   --color-danger: #c0392b;
   --color-danger-hover: #bb3333;
   --color-white: #ffffff;
@@ -87,7 +86,6 @@ html.dark {
   --color-action: #999999;
   --color-line: #333333;
   --color-line-strong: #444444;
-  --color-green: #4ade80;
   --color-scrim: rgba(0,0,0,.67);
   --color-toggle-off: #444444;
 }
@@ -195,6 +193,8 @@ header {
   position:relative;z-index:1;
   padding:17px;background:inherit;
   transition:transform var(--motion);
+  /* Let the browser own vertical scroll; JS only handles clearly horizontal swipes. */
+  touch-action:pan-y;
 }
 .swipe-bg {position:absolute;inset:0;display:flex;justify-content:space-between;z-index:0}
 .swipe-action {
@@ -204,7 +204,6 @@ header {
 .swipe-action.edit {background:var(--color-ink);color:var(--color-surface)}
 .swipe-action.delete {background:var(--color-danger);color:var(--color-white)}
 .swipe-action svg {width:24px;height:24px}
-@media(hover:none) {.task {touch-action:pan-y}}
 
 .card-head {gap:10px;margin-bottom:15px}
 .task-title-wrap {display:flex;align-items:center;gap:7px;min-width:0}
@@ -213,22 +212,80 @@ header {
   text-transform:uppercase;letter-spacing:.3px;overflow-wrap:anywhere;
 }
 .recurring-badge {
-  flex:none;font-size:15px;line-height:1;color:var(--color-muted);font-weight:700;
+  flex:none;font-size:var(--text-sm);line-height:1;
+  color:var(--color-muted);font-weight:var(--weight-bold);
 }
 .completed .task-title {color:var(--color-faded);text-decoration:line-through}
 .task-right {display:flex;align-items:center;gap:11px}
 .task-value {font-weight:700;font-size:var(--text-lg);white-space:nowrap}
 .completed .task-value {color:var(--color-faded)}
-.done-button {
+/* Subtask checkboxes are exactly the same control as the task button. */
+.done-button,.subtask-check {
   width:30px;height:30px;border:2px solid var(--color-ink);
   border-radius:var(--radius-pill);
   background:var(--color-surface);color:transparent;
   display:grid;place-items:center;flex-shrink:0;
   transition:all var(--motion);
 }
-.done-button svg {width:16px;height:16px}
-.done-button:disabled {cursor:default}
-.completed .done-button {background:var(--color-ink);color:var(--color-surface)}
+.done-button svg,.subtask-check svg {width:16px;height:16px}
+.done-button:disabled {cursor:default;opacity:.4}
+.completed .done-button,.subtask-check.checked {background:var(--color-ink);color:var(--color-surface)}
+
+.task-content.expandable {cursor:pointer}
+
+/* Small filled count sits in the title line, in the same type as the rest. */
+.subtask-count {
+  flex:none;width:18px;height:18px;border-radius:var(--radius-pill);
+  background:var(--color-ink);color:var(--color-surface);
+  display:grid;place-items:center;
+  font:700 var(--text-xs) var(--font-body);
+}
+
+/* Overlapping circles stand in for the checkbox on a closed card. */
+.subtask-cluster {
+  --dot-size:14px;
+  position:relative;width:36px;height:36px;flex-shrink:0;
+}
+.subtask-dot {
+  position:absolute;width:var(--dot-size);height:var(--dot-size);
+  border:2px solid var(--color-ink);border-radius:var(--radius-pill);
+  background:var(--color-surface);color:var(--color-ink);
+  display:grid;place-items:center;
+  font:700 var(--text-2xs) var(--font-body);line-height:1;
+  transform:translate(-50%,-50%);
+  animation:dot-in var(--motion) both;
+  animation-delay:calc(var(--i,0) * 40ms);
+}
+.subtask-dot.checked {background:var(--color-ink)}
+.subtask-dot.more {font-size:11px}
+@keyframes dot-in {
+  from {opacity:0;transform:translate(-50%,-50%) scale(.4)}
+  to {opacity:1;transform:translate(-50%,-50%) scale(1)}
+}
+.subtask-chevron {
+  display:grid;place-items:center;width:30px;height:30px;flex-shrink:0;
+  color:var(--color-ink);
+}
+.subtask-chevron svg {width:20px;height:20px}
+
+.subtask-list {margin-top:var(--space-2)}
+.subtask-row {
+  display:flex;align-items:center;gap:var(--space-2);padding:5px 0;
+}
+.subtask-text {
+  flex:1;min-width:0;overflow-wrap:anywhere;
+  font:700 var(--text-lg) var(--font-display);
+  text-transform:uppercase;letter-spacing:.3px;color:var(--color-ink);
+}
+.field input.subtask-text {
+  font:700 var(--text-lg) var(--font-display);
+  text-transform:uppercase;letter-spacing:.3px;
+}
+.subtask-text::placeholder {
+  color:var(--color-faded);text-transform:none;letter-spacing:normal;
+}
+.subtask-row.checked .subtask-text {color:var(--color-faded);text-decoration:line-through}
+.subtask-share {flex:none;font-size:var(--text-xs);color:var(--color-muted)}
 
 /* 7. Sliders -------------------------------------------------------------- */
 .slider-area {position:relative;padding-top:2px}
@@ -318,6 +375,7 @@ footer {
   font:600 var(--text-sm) var(--font-body);color:var(--color-ink-soft);
 }
 .footer-button:hover {border-color:var(--color-ink);color:var(--color-ink)}
+.footer-button[hidden] {display:none}
 
 /* 9. History -------------------------------------------------------------- */
 .week-nav {display:flex;align-items:center;gap:var(--space-3)}
@@ -365,6 +423,8 @@ footer {
   border-radius:var(--radius-sheet) var(--radius-sheet) 0 0;padding:var(--space-5);
   padding-bottom:calc(var(--space-5) + env(safe-area-inset-bottom));
   transform:translateY(0);transition:transform var(--motion);
+  /* Long changelogs must scroll instead of overflowing the viewport. */
+  max-height:90vh;max-height:90dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;
 }
 .overlay.hidden .modal {transform:translateY(100%)}
 .modal-head {
@@ -373,7 +433,7 @@ footer {
 .modal h2 {font:700 var(--text-2xl) var(--font-display);margin:0}
 .close-button {border:0;background:transparent;font-size:25px;color:var(--color-muted)}
 .field {margin-bottom:17px}
-.field label {
+.field label,.field-label {
   display:block;font:700 var(--text-sm) var(--font-body);
   color:var(--color-label);text-transform:uppercase;margin-bottom:7px;
 }
@@ -384,6 +444,31 @@ footer {
 }
 .field input:focus {border-color:var(--color-ink)}
 .hint {font-size:var(--text-xs);color:var(--color-faded);margin-top:6px}
+.subtask-editor-list {
+  display:flex;flex-direction:column;
+  margin-bottom:var(--space-2);
+}
+.subtask-editor-row {
+  display:flex;align-items:center;gap:var(--space-2);
+  padding:var(--space-1) 0;border-bottom:1px solid var(--color-line);
+}
+.subtask-editor-row.dragging {opacity:.5}
+.subtask-drag {
+  flex:none;cursor:grab;touch-action:none;color:var(--color-faded);
+  font:700 var(--text-sm) var(--font-body);letter-spacing:-2px;line-height:1;
+}
+.subtask-add-row {display:flex;gap:var(--space-2)}
+.subtask-add-row input {flex:1;min-width:0}
+.subtask-add {
+  flex:none;width:38px;border:2px solid var(--color-ink);
+  border-radius:var(--radius-md);background:var(--color-surface);
+  color:var(--color-ink);font:700 var(--text-lg) var(--font-body);
+}
+.subtask-delete {
+  flex:none;border:0;background:transparent;color:var(--color-faded);
+  font-size:var(--text-lg);line-height:1;padding:2px 6px;
+}
+.subtask-delete:hover {color:var(--color-danger)}
 .save-button {
   width:100%;border:2px solid var(--color-ink);border-radius:var(--radius-lg);
   background:var(--color-yellow);color:var(--color-ink);padding:14px;
@@ -416,7 +501,7 @@ footer {
   border-radius:var(--radius-pill);background:var(--color-white);
   transition:transform var(--motion);box-shadow:var(--shadow-thumb);
 }
-.toggle.on {background:var(--color-green)}
+.toggle.on {background:var(--color-yellow)}
 .toggle.on::after {transform:translateX(20px)}
 .toggle-label {font-size:var(--text-md);font-weight:var(--weight-medium)}
 .version-line {

@@ -54,7 +54,7 @@ Sættes med `gh secret set <NAVN>` (eller i GitHub: Settings → Secrets and var
 ## Preflight og deploy
 
 - **Preflight** (kører først, deploy springes over hvis den fejler): `node --check app.js`,
-  `python3 -m json.tool manifest.json`, `.github/scripts/check-assets.js` (8 lokale referencer),
+  `python3 -m json.tool manifest.json`, `.github/scripts/check-assets.js` (alle lokale referencer),
   og guards der afviser `little_wins_v2/v3` og `wins-v2/v3` i `app.js`/`sw.js`.
 - **Deploy**: `rsync -rlptz --delete` (ikke `-a` — undgår chown-advarsler, da vi ikke er root).
   Kun `actions/checkout@v4` bruges som action — ingen third-party dependencies.
