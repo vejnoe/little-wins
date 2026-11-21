@@ -219,63 +219,62 @@ header {
 .task-right {display:flex;align-items:center;gap:11px}
 .task-value {font-weight:700;font-size:var(--text-lg);white-space:nowrap}
 .completed .task-value {color:var(--color-faded)}
-/* One checkbox shape; subtasks inherit it and only change size. */
+/* Subtask checkboxes are exactly the same control as the task button. */
 .done-button,.subtask-check {
-  border:2px solid var(--color-ink);border-radius:var(--radius-pill);
+  width:30px;height:30px;border:2px solid var(--color-ink);
+  border-radius:var(--radius-pill);
   background:var(--color-surface);color:transparent;
   display:grid;place-items:center;flex-shrink:0;
   transition:all var(--motion);
 }
-.done-button {width:30px;height:30px}
-.subtask-check {width:22px;height:22px}
 .done-button svg,.subtask-check svg {width:16px;height:16px}
-.subtask-check svg {width:12px;height:12px}
 .done-button:disabled {cursor:default;opacity:.4}
 .completed .done-button,.subtask-check.checked {background:var(--color-ink);color:var(--color-surface)}
 
 .task-content.expandable {cursor:pointer}
 
-/* Count circle and one dot per subtask stand in for the parent checkbox.
-   On open the dots drop into the rows as the real checkboxes. */
-.subtask-indicator {
-  display:flex;align-items:center;gap:var(--space-2);flex-shrink:0;
+/* Small filled count sits in the title line, in the same type as the rest. */
+.subtask-count {
+  flex:none;width:18px;height:18px;border-radius:var(--radius-pill);
+  background:var(--color-ink);color:var(--color-surface);
+  display:grid;place-items:center;
+  font:700 var(--text-xs) var(--font-body);
 }
-.subtask-count-circle {
-  width:30px;height:30px;border:2px solid var(--color-ink);
-  border-radius:var(--radius-pill);display:grid;place-items:center;
-  font-size:var(--text-sm);font-weight:var(--weight-bold);color:var(--color-ink);
-}
-.completed .subtask-count-circle {background:var(--color-ink);color:var(--color-surface)}
-.subtask-dots {display:flex;align-items:center;gap:5px}
+
+/* Overlapping circles stand in for the checkbox on a closed card. */
+.subtask-cluster {position:relative;width:30px;height:30px;flex-shrink:0}
 .subtask-dot {
-  width:11px;height:11px;border:2px solid var(--color-line-strong);
-  border-radius:var(--radius-pill);background:var(--color-surface);
+  position:absolute;width:13px;height:13px;
+  border:2px solid var(--color-ink);border-radius:var(--radius-pill);
+  background:var(--color-surface);color:var(--color-ink);
+  display:grid;place-items:center;
+  font:700 var(--text-2xs) var(--font-body);
 }
-.subtask-dot.checked {background:var(--color-ink);border-color:var(--color-ink)}
-.subtask-indicator.expanded .subtask-dots {display:none}
+.subtask-dot.checked {background:var(--color-ink)}
+.subtask-chevron {
+  display:grid;place-items:center;width:30px;height:30px;flex-shrink:0;
+  color:var(--color-ink);
+}
+.subtask-chevron svg {width:20px;height:20px}
 
 .subtask-list {margin-top:var(--space-2)}
 .subtask-row {
-  display:flex;align-items:center;gap:var(--space-2);
-  padding:8px var(--space-2);margin:0 calc(var(--space-2) * -1);
+  display:flex;align-items:center;gap:var(--space-2);padding:5px 0;
 }
-.subtask-row:nth-child(odd) {background:var(--color-surface-subtle)}
 .subtask-text {
   flex:1;min-width:0;overflow-wrap:anywhere;
-  font:500 var(--text-sm) var(--font-body);color:var(--color-ink-soft);
+  font:700 var(--text-lg) var(--font-display);
+  text-transform:uppercase;letter-spacing:.3px;color:var(--color-ink);
 }
-.field input.subtask-text {font-size:var(--text-sm)}
-.subtask-text::placeholder {color:var(--color-faded)}
+.field input.subtask-text {
+  font:700 var(--text-lg) var(--font-display);
+  text-transform:uppercase;letter-spacing:.3px;
+}
+.subtask-text::placeholder {
+  color:var(--color-faded);text-transform:none;letter-spacing:normal;
+}
 .subtask-row.checked .subtask-text {color:var(--color-faded);text-decoration:line-through}
 .subtask-share {flex:none;font-size:var(--text-xs);color:var(--color-muted)}
-.subtask-check {
-  animation:dot-drop var(--motion) both;
-  animation-delay:calc(var(--i,0) * 45ms);
-}
-@keyframes dot-drop {
-  from {opacity:0;transform:translateY(-12px)}
-  to {opacity:1;transform:translateY(0)}
-}
 
 /* 7. Sliders -------------------------------------------------------------- */
 .slider-area {position:relative;padding-top:2px}

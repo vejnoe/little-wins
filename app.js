@@ -216,6 +216,17 @@ let showLogged = false;
 const expandedTasks = new Set();
 // A swipe must not also count as a tap that folds the card out.
 let swipeJustHappened = false;
+// Cluster centres (in a 30px box) for 1-5 overlapping subtask circles.
+const CLUSTER_DOTS = {
+  1: [[9, 9]],
+  2: [[3, 10], [15, 12]],
+  3: [[9, 3], [2, 15], [16, 15]],
+  4: [[9, 2], [2, 10], [16, 10], [9, 17]],
+  5: [[9, 2], [2, 10], [16, 10], [4, 17], [14, 17]]
+};
+// Rectangles of the cluster circles, kept across the re-render that opens a
+// card so the circles can fly down into the subtask rows.
+let clusterFlight = null;
 let currentDate = localDate();
 // History shows a three-month window; 0 = the most recent one.
 let historyOffset = 0;
@@ -543,6 +554,15 @@ function buildCardHead(task, right) {
   title.textContent = task.title;
   left.append(title);
 
+  const subs = subtaskList(task);
+  if (subs.length) {
+    const count = document.createElement("span");
+    count.className = "subtask-count num";
+    count.textContent = String(subs.length);
+    count.title = subs.length + " underopgaver";
+    left.append(count);
+  }
+
   const days = task.repeatDays || 0;
   if (days) {
     const badge = document.createElement("span");
@@ -633,25 +653,33 @@ function buildCardRight(task, record, card) {
   value.textContent = format(recordPoints(task, record));
   const subs = subtaskList(task);
   if (subs.length) {
-    // The checkbox is replaced by a count circle and one dot per subtask.
-    // When the card is open the dots drop down into the rows instead.
-    const indicator = document.createElement("div");
-    indicator.className = "subtask-indicator" +
-      (expandedTasks.has(task.id) ? " expanded" : "");
-    indicator.title = subs.length + " underopgaver";
-    const count = document.createElement("span");
-    count.className = "subtask-count-circle num";
-    count.textContent = String(subs.length);
-    const dots = document.createElement("span");
-    dots.className = "subtask-dots";
-    subs.forEach((sub, i) => {
+    if (expandedTasks.has(task.id)) {
+      const chevron = document.createElement("span");
+      chevron.className = "subtask-chevron";
+      chevron.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m6 15 6-6 6 6"/></svg>';
+      right.append(value, chevron);
+      return right;
+    }
+
+    // Closed card: up to five overlapping circles; filled means checked.
+    const cluster = document.createElement("div");
+    cluster.className = "subtask-cluster";
+    cluster.title = subs.length + " underopgaver";
+    const shown = Math.min(subs.length, 5);
+    const positions = CLUSTER_DOTS[shown];
+    positions.forEach(([x, y], i) => {
       const dot = document.createElement("span");
-      dot.className = "subtask-dot" + (record.subs && record.subs[sub.id] ? " checked" : "");
-      dot.style.setProperty("--i", String(i));
-      dots.append(dot);
+      const more = shown < subs.length && i === shown - 1;
+      const sub = subs[i];
+      dot.className = "subtask-dot" +
+        (!more && record.subs && record.subs[sub.id] ? " checked" : "") +
+        (more ? " more" : "");
+      dot.style.left = x + "px";
+      dot.style.top = y + "px";
+      if (more) dot.textContent = "+";
+      cluster.append(dot);
     });
-    indicator.append(count, dots);
-    right.append(value, indicator);
+    right.append(value, cluster);
     return right;
   }
 
@@ -696,8 +724,19 @@ function buildTaskCard(task) {
     content.setAttribute("aria-expanded", expandedTasks.has(task.id) ? "true" : "false");
     const toggleOpen = () => {
       if (swipeJustHappened) return;
-      if (expandedTasks.has(task.id)) expandedTasks.delete(task.id);
-      else expandedTasks.add(task.id);
+      if (expandedTasks.has(task.id)) {
+        expandedTasks.delete(task.id);
+      } else {
+        // Remember where the cluster circles sat before the card re-renders.
+        clusterFlight = {
+          taskId: task.id,
+          rects: [...content.querySelectorAll(".subtask-dot")].map(dot => {
+            const r = dot.getBoundingClientRect();
+            return { x: r.left + r.width / 2, y: r.top + r.height / 2, size: r.width };
+          })
+        };
+        expandedTasks.add(task.id);
+      }
       renderTasks();
     };
     content.addEventListener("click", e => {
@@ -719,8 +758,7 @@ function buildTaskCard(task) {
         label.textContent = sub.title;
         const check = document.createElement("button");
         check.type = "button";
-        check.className = "subtask-check" + (checked ? " checked" : "");
-        check.style.setProperty("--i", String(index)); // staggered drop-in
+        check.className = "done-button subtask-check" + (checked ? " checked" : "");
         check.title = checked ? "Fortryd afkrydsning" : "Kryds underopgave af";
         check.setAttribute("aria-label", check.title + ": " + sub.title);
         check.innerHTML = CHECK_ICON;
@@ -732,6 +770,32 @@ function buildTaskCard(task) {
         list.append(row);
       });
       content.append(list);
+      if (clusterFlight && clusterFlight.taskId === task.id) {
+        const flight = clusterFlight;
+        clusterFlight = null;
+        const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+        if (!reduced) requestAnimationFrame(() => {
+          [...list.querySelectorAll(".subtask-check")].forEach((check, i) => {
+            // A fast second tap can replace the DOM before this frame runs.
+            if (!check.isConnected) return;
+            const from = flight.rects[i];
+            if (!from) {
+              check.animate([{ opacity: 0 }, { opacity: 1 }],
+                { duration: 240, delay: i * 45, fill: "both" });
+              return;
+            }
+            const to = check.getBoundingClientRect();
+            if (!to.width) return;
+            const dx = from.x - (to.left + to.width / 2);
+            const dy = from.y - (to.top + to.height / 2);
+            const scale = from.size / to.width;
+            check.animate([
+              { transform: `translate(${dx}px,${dy}px) scale(${scale})` },
+              { transform: "translate(0,0) scale(1)" }
+            ], { duration: 320, easing: "cubic-bezier(.2,.8,.2,1)", delay: i * 45, fill: "both" });
+          });
+        });
+      }
     }
   }
   card.append(swipeBg, content);
