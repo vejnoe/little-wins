@@ -216,13 +216,14 @@ let showLogged = false;
 const expandedTasks = new Set();
 // A swipe must not also count as a tap that folds the card out.
 let swipeJustHappened = false;
-// Cluster centres (in a 30px box) for 1-5 overlapping subtask circles.
+// Cluster centres in percent of a square box for 1-5 overlapping dots. The
+// last slot in a 6+ cluster is the "+" overflow marker.
 const CLUSTER_DOTS = {
-  1: [[9, 9]],
-  2: [[3, 10], [15, 12]],
-  3: [[9, 3], [2, 15], [16, 15]],
-  4: [[9, 2], [2, 10], [16, 10], [9, 17]],
-  5: [[9, 2], [2, 10], [16, 10], [4, 17], [14, 17]]
+  1: [[50, 50]],
+  2: [[34, 50], [66, 50]],
+  3: [[50, 30], [32, 66], [68, 66]],
+  4: [[50, 27], [27, 50], [73, 50], [50, 73]],
+  5: [[50, 26], [26, 47], [74, 47], [38, 74], [62, 74]]
 };
 // Rectangles of the cluster circles, kept across the re-render that opens a
 // card so the circles can fly down into the subtask rows.
@@ -323,6 +324,11 @@ function recordPoints(task, record) {
   return subs.reduce((sum, s, i) =>
     sum + (record.subs && record.subs[s.id] ? subtaskShare(task, i) : 0), 0);
 }
+// The card shows what is still left to earn, counting down to zero as the
+// task (or its subtasks) are checked. The header total keeps the earned sum.
+function remainingPoints(task, record) {
+  return Math.max(0, task.points - recordPoints(task, record));
+}
 
 function ensureToday() {
   const today = localDate();
@@ -360,11 +366,6 @@ function dayTotal(date=currentDate) {
     const task = byId.get(id);
     return sum + (task ? recordPoints(task, r) : (r.done ? r.value : 0));
   }, 0);
-}
-
-function allTimeTotal() {
-  return Object.values(state.days).reduce((sum,day) =>
-    sum + Object.values(day).reduce((s,r)=>s+(r.done?r.value:0),0),0);
 }
 
 /* Audio: the coin clip is fetched and decoded once at startup, so the first
@@ -650,7 +651,7 @@ function buildCardRight(task, record, card) {
   right.className = "task-right";
   const value = document.createElement("span");
   value.className = "task-value num";
-  value.textContent = format(recordPoints(task, record));
+  value.textContent = format(remainingPoints(task, record));
   const subs = subtaskList(task);
   if (subs.length) {
     if (expandedTasks.has(task.id)) {
@@ -674,8 +675,9 @@ function buildCardRight(task, record, card) {
       dot.className = "subtask-dot" +
         (!more && record.subs && record.subs[sub.id] ? " checked" : "") +
         (more ? " more" : "");
-      dot.style.left = x + "px";
-      dot.style.top = y + "px";
+      dot.style.left = x + "%";
+      dot.style.top = y + "%";
+      dot.style.setProperty("--i", String(i));
       if (more) dot.textContent = "+";
       cluster.append(dot);
     });
@@ -789,10 +791,13 @@ function buildTaskCard(task) {
             const dx = from.x - (to.left + to.width / 2);
             const dy = from.y - (to.top + to.height / 2);
             const scale = from.size / to.width;
+            // A slight arc: drift sideways at the midpoint, then settle.
+            const midX = dx * 1.12, midY = dy * 0.45;
             check.animate([
-              { transform: `translate(${dx}px,${dy}px) scale(${scale})` },
-              { transform: "translate(0,0) scale(1)" }
-            ], { duration: 320, easing: "cubic-bezier(.2,.8,.2,1)", delay: i * 45, fill: "both" });
+              { transform: `translate(${dx}px,${dy}px) scale(${scale}) rotate(-25deg)`, opacity: .6 },
+              { transform: `translate(${midX}px,${midY}px) scale(1.08) rotate(8deg)`, opacity: 1, offset: .6 },
+              { transform: "translate(0,0) scale(1) rotate(0deg)" }
+            ], { duration: 420, easing: "cubic-bezier(.25,.9,.25,1)", delay: i * 55, fill: "both" });
           });
         });
       }

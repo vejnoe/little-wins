@@ -242,15 +242,26 @@ header {
 }
 
 /* Overlapping circles stand in for the checkbox on a closed card. */
-.subtask-cluster {position:relative;width:30px;height:30px;flex-shrink:0}
+.subtask-cluster {
+  --dot-size:14px;
+  position:relative;width:36px;height:36px;flex-shrink:0;
+}
 .subtask-dot {
-  position:absolute;width:13px;height:13px;
+  position:absolute;width:var(--dot-size);height:var(--dot-size);
   border:2px solid var(--color-ink);border-radius:var(--radius-pill);
   background:var(--color-surface);color:var(--color-ink);
   display:grid;place-items:center;
-  font:700 var(--text-2xs) var(--font-body);
+  font:700 var(--text-2xs) var(--font-body);line-height:1;
+  transform:translate(-50%,-50%);
+  animation:dot-in var(--motion) both;
+  animation-delay:calc(var(--i,0) * 40ms);
 }
 .subtask-dot.checked {background:var(--color-ink)}
+.subtask-dot.more {font-size:11px}
+@keyframes dot-in {
+  from {opacity:0;transform:translate(-50%,-50%) scale(.4)}
+  to {opacity:1;transform:translate(-50%,-50%) scale(1)}
+}
 .subtask-chevron {
   display:grid;place-items:center;width:30px;height:30px;flex-shrink:0;
   color:var(--color-ink);
@@ -412,6 +423,8 @@ footer {
   border-radius:var(--radius-sheet) var(--radius-sheet) 0 0;padding:var(--space-5);
   padding-bottom:calc(var(--space-5) + env(safe-area-inset-bottom));
   transform:translateY(0);transition:transform var(--motion);
+  /* Long changelogs must scroll instead of overflowing the viewport. */
+  max-height:90vh;max-height:90dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;
 }
 .overlay.hidden .modal {transform:translateY(100%)}
 .modal-head {
