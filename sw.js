@@ -25,9 +25,11 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  // Network-first: always pick up new app.js/style.css, fall back to cache offline.
+  // Network-first: skip the browser's HTTP cache too, otherwise an installed
+  // PWA can keep serving stale app.js even though it re-fetches on every load.
+  // Fall back to the cache only when offline.
   e.respondWith(
-    fetch(e.request).then((res) => {
+    fetch(e.request, { cache: 'reload' }).then((res) => {
       const copy = res.clone();
       caches.open(CACHE_NAME).then((c) => c.put(e.request, copy));
       return res;
