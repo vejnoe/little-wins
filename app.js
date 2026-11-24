@@ -1764,8 +1764,30 @@ handleVersionOnLoad();
 ensureToday();
 renderTasks();
 
-/* Register service worker for offline support */
+/* Register service worker for offline support and keep installed PWAs fresh. */
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
+  // Only a real update (an existing controller is replaced) should reload —
+  // never the very first install, which would otherwise reload once for nothing.
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    // register() does not force an update check. Browsers do one on navigation,
+    // but that is unreliable in standalone/home-screen apps, so ask every launch.
+    reg.update().catch(() => {});
+    if (hadController) {
+      let reloading = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloading) return;
+        reloading = true;
+        window.location.reload();
+      });
+    }
+  }).catch(() => {});
+
+  // Installed apps are often resumed from background instead of relaunched, so
+  // also check when the app returns to the foreground.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    navigator.serviceWorker.ready.then(reg => reg.update()).catch(() => {});
+  });
 }
 })();
